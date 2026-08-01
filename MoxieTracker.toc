@@ -2,7 +2,7 @@
 ## Title: MoxieTracker
 ## Notes: Displays current character Artisan Moxie, Shard of Dundun, and Unalloyed Abundance currencies in a movable window.
 ## Author: Tharavol
-## Version: 1.1.0
+## Version: @project-version@
 ## SavedVariables: MoxieTrackerDB
 
 MoxieTracker.lua
