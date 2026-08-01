@@ -1,0 +1,27 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create release archive
+        run: |
+          mkdir -p dist
+          zip -r dist/MoxieTracker-${GITHUB_REF_NAME}.zip MoxieTracker.toc MoxieTracker.lua README.md LICENSE docs
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/MoxieTracker-${{ github.ref_name }}.zip
+          draft: false
+          prerelease: false

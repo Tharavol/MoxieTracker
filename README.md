@@ -18,6 +18,7 @@ MoxieTracker is a World of Warcraft addon for Retail / Midnight that displays th
 
 - GitHub Actions runs a lightweight validation workflow on pushes and pull requests.
 - A release artifact is packaged automatically on pushes to main or master.
+- Tagging a release with a version like v1.0.0 creates a GitHub Release with the packaged addon zip.
 
 ## Credits
 
