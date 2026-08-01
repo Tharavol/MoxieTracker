@@ -16,8 +16,20 @@ jobs:
 
       - name: Create release archive
         run: |
-          mkdir -p dist
-          zip -r dist/MoxieTracker-${GITHUB_REF_NAME}.zip MoxieTracker.toc MoxieTracker.lua README.md LICENSE docs
+          # WoW requires the addon to live in a folder named after the .toc, so
+          # stage into MoxieTracker/ and zip that rather than zipping loose files.
+          mkdir -p dist/MoxieTracker
+          cp MoxieTracker.toc MoxieTracker.lua README.md LICENSE dist/MoxieTracker/
+          cp -r docs dist/MoxieTracker/
+          cd dist
+          zip -r "MoxieTracker-${GITHUB_REF_NAME}.zip" MoxieTracker
+          unzip -l "MoxieTracker-${GITHUB_REF_NAME}.zip"
+
+      - name: Verify archive layout
+        run: |
+          cd dist
+          unzip -l "MoxieTracker-${GITHUB_REF_NAME}.zip" | grep -q 'MoxieTracker/MoxieTracker.toc'
+          unzip -l "MoxieTracker-${GITHUB_REF_NAME}.zip" | grep -q 'MoxieTracker/MoxieTracker.lua'
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

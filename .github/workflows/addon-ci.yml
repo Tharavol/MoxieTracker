@@ -21,17 +21,15 @@ jobs:
 
       - name: Check Lua syntax
         run: |
-          python - <<'PY'
-          import pathlib
-          import re
-          path = pathlib.Path('MoxieTracker.lua')
-          text = path.read_text(encoding='utf-8')
-          if not text.strip():
-              raise SystemExit('MoxieTracker.lua is empty')
-          if 'CreateFrame' not in text:
-              raise SystemExit('MoxieTracker.lua does not look like a WoW addon script')
-          print('Lua file structure looks valid')
-          PY
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq lua5.1
+          luac5.1 -p MoxieTracker.lua
+          echo 'Lua syntax OK'
+
+      - name: Check TOC declares an interface version
+        run: |
+          grep -qE '^## Interface: [0-9]+' MoxieTracker.toc
+          grep -qE '^MoxieTracker\.lua$' MoxieTracker.toc
 
   package:
     needs: validate
@@ -43,8 +41,14 @@ jobs:
 
       - name: Create release archive
         run: |
-          mkdir -p dist
-          zip -r dist/MoxieTracker.zip MoxieTracker.toc MoxieTracker.lua README.md LICENSE docs
+          # WoW requires the addon to live in a folder named after the .toc, so
+          # stage into MoxieTracker/ and zip that rather than zipping loose files.
+          mkdir -p dist/MoxieTracker
+          cp MoxieTracker.toc MoxieTracker.lua README.md LICENSE dist/MoxieTracker/
+          cp -r docs dist/MoxieTracker/
+          cd dist
+          zip -r MoxieTracker.zip MoxieTracker
+          unzip -l MoxieTracker.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
