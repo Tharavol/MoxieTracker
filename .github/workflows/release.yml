@@ -5,35 +5,25 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
-  release:
+  package:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Create release archive
-        run: |
-          # WoW requires the addon to live in a folder named after the .toc, so
-          # stage into MoxieTracker/ and zip that rather than zipping loose files.
-          mkdir -p dist/MoxieTracker
-          cp MoxieTracker.toc MoxieTracker.lua README.md CHANGELOG.md LICENSE dist/MoxieTracker/
-          cp -r docs dist/MoxieTracker/
-          cd dist
-          zip -r "MoxieTracker-${GITHUB_REF_NAME}.zip" MoxieTracker
-          unzip -l "MoxieTracker-${GITHUB_REF_NAME}.zip"
-
-      - name: Verify archive layout
-        run: |
-          cd dist
-          unzip -l "MoxieTracker-${GITHUB_REF_NAME}.zip" | grep -q 'MoxieTracker/MoxieTracker.toc'
-          unzip -l "MoxieTracker-${GITHUB_REF_NAME}.zip" | grep -q 'MoxieTracker/MoxieTracker.lua'
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
+      - uses: actions/checkout@v7
         with:
-          files: dist/MoxieTracker-${{ github.ref_name }}.zip
-          draft: false
-          prerelease: false
+          fetch-depth: 0
+
+      - name: Package and release
+        uses: BigWigsMods/packager@v2
+        env:
+          GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
+          # Optional. Set these repository secrets to publish automatically;
+          # without them the packager just attaches the zip to the GitHub
+          # release. CF_API_KEY additionally needs ## X-Curse-Project-ID in
+          # the .toc.
+          CF_API_KEY: ${{ secrets.CF_API_KEY }}
+          WOWI_API_TOKEN: ${{ secrets.WOWI_API_TOKEN }}
+          WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}

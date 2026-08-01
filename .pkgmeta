@@ -1,0 +1,12 @@
+package-as: MoxieTracker
+
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown
+
+# docs/ is kept in the package, matching what the previous hand-rolled zip
+# shipped. Note that it currently holds only HANDOFF.md, which is a developer
+# document rather than user-facing.
+ignore:
+  - .github
+  - .luacheckrc

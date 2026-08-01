@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: leafo/gh-actions-lua@v13
+        with:
+          luaVersion: "5.1"
+
+      - uses: leafo/gh-actions-luarocks@v6
+
+      - name: Install luacheck
+        run: luarocks install luacheck
+
+      - name: Luacheck
+        run: luacheck .
+
+  package:
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # -d skips uploading, so this builds the real release zip on every push
+      # without publishing it. Packaging breakage surfaces here rather than at
+      # tag time.
+      - name: Build package
+        uses: BigWigsMods/packager@v2
+        with:
+          args: -d
+        env:
+          GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify archive layout
+        run: |
+          zip=$(ls .release/*.zip)
+          unzip -l "$zip"
+          unzip -l "$zip" | grep -q 'MoxieTracker/MoxieTracker.toc'
+          unzip -l "$zip" | grep -q 'MoxieTracker/MoxieTracker.lua'
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: moxietracker-package
+          path: .release/*.zip
