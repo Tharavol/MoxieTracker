@@ -1,0 +1,53 @@
+name: Addon CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate addon files
+        run: |
+          test -f MoxieTracker.toc
+          test -f MoxieTracker.lua
+          test -f README.md
+          test -f LICENSE
+
+      - name: Check Lua syntax
+        run: |
+          python - <<'PY'
+          import pathlib
+          import re
+          path = pathlib.Path('MoxieTracker.lua')
+          text = path.read_text(encoding='utf-8')
+          if not text.strip():
+              raise SystemExit('MoxieTracker.lua is empty')
+          if 'CreateFrame' not in text:
+              raise SystemExit('MoxieTracker.lua does not look like a WoW addon script')
+          print('Lua file structure looks valid')
+          PY
+
+  package:
+    needs: validate
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create release archive
+        run: |
+          mkdir -p dist
+          zip -r dist/MoxieTracker.zip MoxieTracker.toc MoxieTracker.lua README.md LICENSE docs
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: moxietracker-release
+          path: dist/MoxieTracker.zip
