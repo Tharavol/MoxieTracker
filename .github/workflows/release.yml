@@ -12,7 +12,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Create release archive
         run: |
@@ -32,7 +32,7 @@ jobs:
           unzip -l "MoxieTracker-${GITHUB_REF_NAME}.zip" | grep -q 'MoxieTracker/MoxieTracker.lua'
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: dist/MoxieTracker-${{ github.ref_name }}.zip
           draft: false
