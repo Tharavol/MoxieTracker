@@ -19,7 +19,7 @@ jobs:
           # WoW requires the addon to live in a folder named after the .toc, so
           # stage into MoxieTracker/ and zip that rather than zipping loose files.
           mkdir -p dist/MoxieTracker
-          cp MoxieTracker.toc MoxieTracker.lua README.md LICENSE dist/MoxieTracker/
+          cp MoxieTracker.toc MoxieTracker.lua README.md CHANGELOG.md LICENSE dist/MoxieTracker/
           cp -r docs dist/MoxieTracker/
           cd dist
           zip -r "MoxieTracker-${GITHUB_REF_NAME}.zip" MoxieTracker

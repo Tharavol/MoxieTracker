@@ -7,6 +7,7 @@ MoxieTracker is a World of Warcraft addon for Retail / Midnight that displays cu
 ## Current state
 
 - Addon files: MoxieTracker.toc, MoxieTracker.lua
+- Release history is in CHANGELOG.md, following Keep a Changelog. Add an entry there and bump ## Version in the TOC as part of any change worth releasing; both workflows package CHANGELOG.md into the addon folder, and CI fails if it is missing.
 - Repository root: this folder
 - License: GPL-3.0. LICENSE holds the full 674-line text fetched from gnu.org; it previously held only a 23-line stub that named the license and then cut to "See the GNU GPL for more details", so the terms were not actually stated. MoxieTracker.lua carries the standard GPL notice header, per the "How to Apply These Terms" section of the license.
 - Credits: created by Tharavol, scaffold assisted by GitHub Copilot, Midnight API fixes and crafting window integration by Claude Opus 5 via Claude Code.
@@ -21,11 +22,14 @@ MoxieTracker is a World of Warcraft addon for Retail / Midnight that displays cu
 - A dragged position can be read off disk without being in-game: it is written to WTF/Account/<ACCOUNT>/<Realm>/<Character>/SavedVariables/MoxieTracker.lua. The file is flushed on /reload or logout, so it is stale until one of those happens. The variable is SavedVariablesPerCharacter, so each character has its own file.
 - Dragging stores an offset from that same TOPRIGHT corner in MoxieTrackerDB, normalized through both frames' effective scales so a dragged position round trips exactly even when the two frames differ in scale. /moxie reset clears it. If the anchor corner in ApplyAnchor is ever changed, SaveOffsetFromAnchor must be changed to match or dragging will jump.
 - /moxie debug reports the current anchor offset, whether it is the default or user placed, and whether the crafting frame was found.
-- Observed in-game: Artisan Moxie is per-profession, e.g. "Artisan Alchemist's Moxie" (id 3256). The "moxie" keyword catches every profession variant, which is why matching is by name rather than by ID.
-- Shard of Dundun (id 3376, no apostrophe, per its Wowhead page) and Unalloyed Abundance (id 3377) are tracked by explicit ID, not by keyword. Undiscovered currencies are absent from the currency list entirely, so a name scan cannot find one the character has never held. Explicit IDs are shown even at zero quantity; keyword matches still require a quantity above zero.
-- Currency IDs are not returned by GetCurrencyListInfo; they are parsed out of GetCurrencyListLink.
-- Keyword matching ("moxie", "dundun") covers the per-profession moxie currencies and requires a quantity above zero. Explicitly tracked IDs bypass both the keyword list and the zero check.
-- GetCurrencyListInfo only enumerates visible rows, so currencies under a collapsed header are invisible to it. Matching on explicit currency IDs would avoid this.
+- Currencies are collected in three passes, deduped by both ID and lowercased name. ALWAYS_SHOWN_IDS (Shard of Dundun 3376, Unalloyed Abundance 3377) render even at zero. MOXIE_IDS (3256-3266, one per profession) render only above zero, since every character could otherwise show eleven empty rows. A keyword pass over the currency list then catches anything neither table knows about.
+- Matching is by ID first because currency names are localized: a name scan finds nothing on a non-English client. The keyword list is a fallback for a moxie currency added in a future patch, not the primary path.
+- Matching deliberately ignores info.description. Descriptions cross-reference each other -- Shard of Dundun's mentions Unalloyed Abundance -- so matching them pulls in unrelated currencies.
+- Currency IDs are not returned by GetCurrencyListInfo; they are parsed out of GetCurrencyListLink. That call can fail, which is why dedupe also keys on name.
+- GetCurrencyListInfo only enumerates visible rows, so currencies under a collapsed header are invisible to it. The ID passes are immune to this; the keyword fallback is not.
+- The panel matches the crafting frame's strata and sits ten levels above it. At UIParent's default MEDIUM strata it drew beneath the crafting window and the addon panes docked to it, such as CraftSim's.
+- Panel width is measured from the widest rendered row via GetStringWidth, floored at 240. Color escapes do not count toward that measurement.
+- MoxieTrackerDB is account-wide (## SavedVariables). It was per-character until v1.1.0, which meant repositioning on every character. Switching scope orphans the old per-character files under WTF/Account/<ACCOUNT>/<Realm>/<Character>/SavedVariables/; the client ignores them and they can be deleted.
 - The client interface version is 120007. Changes to the TOC require a full client restart, not a UI reload.
 
 ## Next steps

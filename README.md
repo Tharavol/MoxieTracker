@@ -4,7 +4,9 @@ MoxieTracker is a World of Warcraft addon for Retail / Midnight that displays th
 
 ## Features
 
-- Tracks Artisan Moxie (all professions), Shard of Dundun, and Unalloyed Abundance
+- Tracks Artisan Moxie for all eleven professions, Shard of Dundun, and Unalloyed Abundance, matched by currency ID so it works on any client locale
+- Shard of Dundun and Unalloyed Abundance always show, even at zero; moxie rows appear only for professions the character actually has
+- Remembers one panel position across the whole account
 - Colors each count against its own thresholds: Shard of Dundun is green at 6 and red at 7-8, Unalloyed Abundance is green at 800 or more, Moxie is green at 600 or more, yellow otherwise
 - Docks a compact, draggable panel to the top-right of the crafting window, shown only while that window is open
 - Displays the same tooltip information as the default currency UI when hovering over a line
@@ -12,7 +14,7 @@ MoxieTracker is a World of Warcraft addon for Retail / Midnight that displays th
 ## Slash commands
 
 - `/moxie pin` - keep the panel visible even with no profession open
-- `/moxie debug` - print the current anchor state, then every currency with a nonzero quantity, with IDs
+- `/moxie debug` - print the anchor state, every tracked currency ID with its quantity, then every currency with a nonzero quantity
 - `/moxie reset` - move the panel back to the crafting window's top-right corner
 
 ## Installation
@@ -21,9 +23,13 @@ MoxieTracker is a World of Warcraft addon for Retail / Midnight that displays th
 2. Launch World of Warcraft.
 3. Reload the UI or restart the game.
 
+## Changelog
+
+Release history is in [CHANGELOG.md](CHANGELOG.md).
+
 ## Development and CI
 
-- GitHub Actions runs a lightweight validation workflow on pushes and pull requests.
+- GitHub Actions validates the addon on pushes and pull requests: `luac5.1 -p` for syntax, luacheck for undefined globals, and a check that the TOC declares an interface version.
 - A release artifact is packaged automatically on pushes to main or master.
 - Tagging a release with a version like v1.0.0 creates a GitHub Release with the packaged addon zip.
 

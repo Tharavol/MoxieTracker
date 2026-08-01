@@ -18,22 +18,36 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 --]]
 
-local addonName, addon = ...
+-- Shown even at zero. A currency the character has not discovered is absent
+-- from the currency list entirely, so these must be queried by ID or they would
+-- silently have no row at all.
+local ALWAYS_SHOWN_IDS = {
+    3376, -- Shard of Dundun
+    3377, -- Unalloyed Abundance
+}
 
--- Matched against currency names and descriptions. Keyword matching is used for
--- moxie because it is per-profession ("Artisan Alchemist's Moxie" and friends),
--- so a keyword picks up every variant without one ID per profession.
+-- Shown only when held. Every character can theoretically hold all eleven, so
+-- listing them unconditionally would fill the panel with empty rows.
+local MOXIE_IDS = {
+    3256, -- Artisan Alchemist's Moxie
+    3257, -- Artisan Blacksmith's Moxie
+    3258, -- Artisan Enchanter's Moxie
+    3259, -- Artisan Engineer's Moxie
+    3260, -- Artisan Herbalist's Moxie
+    3261, -- Artisan Scribe's Moxie
+    3262, -- Artisan Jewelcrafter's Moxie
+    3263, -- Artisan Leatherworker's Moxie
+    3264, -- Artisan Miner's Moxie
+    3265, -- Artisan Skinner's Moxie
+    3266, -- Artisan Tailor's Moxie
+}
+
+-- Fallback only, for a moxie currency added in a future patch that is not in
+-- MOXIE_IDS yet. Matching by name is locale-dependent and will not fire on a
+-- non-English client, which is precisely why the IDs above are the primary path.
 local KEYWORDS = {
     "moxie",
     "dundun",
-}
-
--- Always queried directly by ID. A currency the character has not discovered
--- does not appear in the currency list at all, so keyword matching alone would
--- never find it.
-local TRACKED_IDS = {
-    3376, -- Shard of Dundun
-    3377, -- Unalloyed Abundance
 }
 
 local GREEN = "|cff33ff33"
@@ -61,15 +75,19 @@ local QUANTITY_COLOR = {
 MoxieTrackerDB = MoxieTrackerDB or {}
 
 -- Offset from the crafting window's TOPRIGHT corner. The panel hangs off the
--- right edge, dropped down the side to clear the upper portion of the crafting
--- frame. Taken from a placement verified in-game rather than guessed.
+-- right edge, dropped down the side. Taken from a placement verified in-game
+-- rather than guessed.
 local DEFAULT_OFFSET_X = 4
 local DEFAULT_OFFSET_Y = -440
 
 local craftingFrame
 
+local MIN_WIDTH = 240
+local PADDING = 8
+local LINE_HEIGHT = 14
+
 local frame = CreateFrame("Frame", "MoxieTrackerFrame", UIParent, "BackdropTemplate")
-frame:SetSize(240, 70)
+frame:SetSize(MIN_WIDTH, 70)
 frame:EnableMouse(true)
 frame:RegisterForDrag("LeftButton")
 frame:SetMovable(true)
@@ -146,9 +164,9 @@ local function EnsureLine(index)
     local line = frame.lines[index]
     if not line then
         line = CreateFrame("Frame", nil, frame)
-        line:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -(24 + ((index - 1) * 14)))
-        line:SetPoint("RIGHT", frame, "RIGHT", -8, 0)
-        line:SetHeight(14)
+        line:SetPoint("TOPLEFT", frame, "TOPLEFT", PADDING, -(24 + ((index - 1) * LINE_HEIGHT)))
+        line:SetPoint("RIGHT", frame, "RIGHT", -PADDING, 0)
+        line:SetHeight(LINE_HEIGHT)
         line:EnableMouse(true)
         line:RegisterForDrag("LeftButton")
         line:SetScript("OnDragStart", function()
@@ -191,22 +209,34 @@ local function MatchesKeyword(text)
     return false
 end
 
+local MOXIE_ID_SET = {}
+for _, currencyID in ipairs(MOXIE_IDS) do
+    MOXIE_ID_SET[currencyID] = true
+end
+
 local function GetQuantityColor(entry)
     local rule = entry.currencyID and QUANTITY_COLOR[entry.currencyID]
     if rule then
         return rule(entry.quantity)
     end
-    if entry.name and entry.name:lower():find("moxie", 1, true) then
+    -- ID first so the threshold survives a non-English client; the name check
+    -- only covers a moxie currency that reached us through the keyword fallback.
+    local isMoxie = (entry.currencyID and MOXIE_ID_SET[entry.currencyID])
+        or (entry.name and entry.name:lower():find("moxie", 1, true))
+    if isMoxie then
         return entry.quantity >= 600 and GREEN or YELLOW
     end
     return WHITE
 end
 
+-- Name only. Descriptions cross-reference each other -- Shard of Dundun's
+-- description mentions Unalloyed Abundance -- so matching them pulls in
+-- unrelated currencies that merely name one of ours.
 local function IsTrackedCurrency(info)
     if not info or info.isHeader or not info.quantity or info.quantity <= 0 then
         return false
     end
-    return MatchesKeyword(info.name) or MatchesKeyword(info.description)
+    return MatchesKeyword(info.name)
 end
 
 -- GetCurrencyListInfo does not return the currency ID; it has to come from the link.
@@ -219,39 +249,46 @@ end
 
 local function CollectTracked()
     local tracked = {}
-    local seen = {}
-    local size = C_CurrencyInfo.GetCurrencyListSize and C_CurrencyInfo.GetCurrencyListSize() or 0
+    local seenID, seenName = {}, {}
 
-    -- Pass 1: keyword scan of the currency list. This is what picks up the
-    -- per-profession moxie currencies without hardcoding one ID per profession.
-    for index = 1, size do
-        local info = C_CurrencyInfo.GetCurrencyListInfo(index)
-        if IsTrackedCurrency(info) then
-            local currencyID = GetCurrencyIDForIndex(index)
-            if currencyID then
-                seen[currencyID] = true
-            end
-            table.insert(tracked, {
-                name = info.name or "Currency",
-                quantity = info.quantity or 0,
-                currencyID = currencyID,
-            })
+    -- Deduped by both ID and name: the keyword fallback can produce an entry
+    -- whose link failed to resolve, leaving it with no ID to match on.
+    local function Add(currencyID, name, quantity)
+        name = name or "Currency"
+        local nameKey = name:lower()
+        if (currencyID and seenID[currencyID]) or seenName[nameKey] then
+            return
+        end
+        if currencyID then
+            seenID[currencyID] = true
+        end
+        seenName[nameKey] = true
+        table.insert(tracked, { name = name, quantity = quantity or 0, currencyID = currencyID })
+    end
+
+    -- Pass 1: by ID, shown regardless of quantity.
+    for _, currencyID in ipairs(ALWAYS_SHOWN_IDS) do
+        local info = C_CurrencyInfo.GetCurrencyInfo(currencyID)
+        if info and info.name then
+            Add(currencyID, info.name, info.quantity)
         end
     end
 
-    -- Pass 2: explicit IDs. Undiscovered currencies are absent from the list
-    -- entirely, so pass 1 cannot see them at any quantity. These are shown even
-    -- at zero so the row does not silently vanish.
-    for _, currencyID in ipairs(TRACKED_IDS) do
-        if not seen[currencyID] then
-            local info = C_CurrencyInfo.GetCurrencyInfo(currencyID)
-            if info and info.name then
-                table.insert(tracked, {
-                    name = info.name,
-                    quantity = info.quantity or 0,
-                    currencyID = currencyID,
-                })
-            end
+    -- Pass 2: by ID, only for professions this character actually has.
+    for _, currencyID in ipairs(MOXIE_IDS) do
+        local info = C_CurrencyInfo.GetCurrencyInfo(currencyID)
+        if info and info.name and (info.quantity or 0) > 0 then
+            Add(currencyID, info.name, info.quantity)
+        end
+    end
+
+    -- Pass 3: keyword fallback over the currency list, for anything matching
+    -- that neither ID table knows about yet.
+    local size = C_CurrencyInfo.GetCurrencyListSize and C_CurrencyInfo.GetCurrencyListSize() or 0
+    for index = 1, size do
+        local info = C_CurrencyInfo.GetCurrencyListInfo(index)
+        if IsTrackedCurrency(info) then
+            Add(GetCurrencyIDForIndex(index), info.name, info.quantity)
         end
     end
 
@@ -274,18 +311,24 @@ local function UpdateDisplay()
         fallback.currencyID = nil
         fallback.text:SetText("No tracked currencies")
         fallback:Show()
-        frame:SetHeight(56)
+        frame:SetSize(MIN_WIDTH, 56)
         return
     end
 
+    -- Width is driven by the widest rendered row so long names such as
+    -- "Artisan Leatherworker's Moxie" are not clipped. Colour escapes do not
+    -- contribute to GetStringWidth, so this measures the visible text.
+    local widest = 0
     for index, entry in ipairs(tracked) do
         local line = EnsureLine(index)
         line.currencyID = entry.currencyID
         line.text:SetText(string.format("%s: %s%d|r", entry.name, GetQuantityColor(entry), entry.quantity))
         line:Show()
+        widest = math.max(widest, line.text:GetStringWidth())
     end
 
-    frame:SetHeight(math.max(56, 40 + (#tracked * 14)))
+    frame:SetWidth(math.max(MIN_WIDTH, math.ceil(widest) + (PADDING * 2)))
+    frame:SetHeight(math.max(56, 40 + (#tracked * LINE_HEIGHT)))
 end
 
 frame:SetScript("OnEnter", function(self)
@@ -351,6 +394,13 @@ local function HookCraftingFrame(globalName)
     end
     target.moxieTrackerHooked = true
     craftingFrame = target
+
+    -- UIParent's default MEDIUM strata draws below the crafting window and the
+    -- addon panes docked to it, so an overlapping panel would hide behind them.
+    -- Match the crafting frame's strata and sit above it.
+    frame:SetFrameStrata(target:GetFrameStrata())
+    frame:SetFrameLevel(target:GetFrameLevel() + 10)
+
     target:HookScript("OnShow", function()
         SetCraftOpen(true)
     end)
@@ -382,6 +432,19 @@ SlashCmdList["MOXIETRACKER"] = function(msg)
             offsetX, offsetY,
             (type(MoxieTrackerDB.offsetY) == "number") and "user placed" or "default",
             craftingFrame and "found" or "not loaded"))
+
+        -- Queried by ID so zero-quantity and undiscovered currencies still
+        -- report, which the currency-list walk below cannot show.
+        print("|cff33ff99MoxieTracker|r: tracked IDs")
+        for _, group in ipairs({ { "always", ALWAYS_SHOWN_IDS }, { "moxie", MOXIE_IDS } }) do
+            for _, currencyID in ipairs(group[2]) do
+                local info = C_CurrencyInfo.GetCurrencyInfo(currencyID)
+                print(string.format("  [%s] %d %s = %s",
+                    group[1], currencyID,
+                    info and info.name or "|cffff3333unknown|r",
+                    info and tostring(info.quantity or 0) or "n/a"))
+            end
+        end
 
         local size = C_CurrencyInfo.GetCurrencyListSize and C_CurrencyInfo.GetCurrencyListSize() or 0
         print(string.format("|cff33ff99MoxieTracker|r: currency list size = %d", size))

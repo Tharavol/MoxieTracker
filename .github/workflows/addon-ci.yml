@@ -17,14 +17,20 @@ jobs:
           test -f MoxieTracker.toc
           test -f MoxieTracker.lua
           test -f README.md
+          test -f CHANGELOG.md
           test -f LICENSE
 
       - name: Check Lua syntax
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq lua5.1
+          sudo apt-get install -y -qq lua5.1 luarocks
           luac5.1 -p MoxieTracker.lua
           echo 'Lua syntax OK'
+
+      - name: Lint with luacheck
+        run: |
+          sudo luarocks install luacheck
+          luacheck MoxieTracker.lua
 
       - name: Check TOC declares an interface version
         run: |
@@ -44,7 +50,7 @@ jobs:
           # WoW requires the addon to live in a folder named after the .toc, so
           # stage into MoxieTracker/ and zip that rather than zipping loose files.
           mkdir -p dist/MoxieTracker
-          cp MoxieTracker.toc MoxieTracker.lua README.md LICENSE dist/MoxieTracker/
+          cp MoxieTracker.toc MoxieTracker.lua README.md CHANGELOG.md LICENSE dist/MoxieTracker/
           cp -r docs dist/MoxieTracker/
           cd dist
           zip -r MoxieTracker.zip MoxieTracker
