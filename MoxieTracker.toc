@@ -1,0 +1,8 @@
+## Interface: 110000
+## Title: MoxieTracker
+## Notes: Displays current character artisan moxie and Dun'dun shard currencies in a movable window.
+## Author: Copilot
+## Version: 1.0.0
+## SavedVariablesPerCharacter: MoxieTrackerDB
+
+MoxieTracker.lua

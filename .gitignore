@@ -1,0 +1,12 @@
+# WoW addon local files
+*.bak
+*.tmp
+*.swp
+*.swo
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
