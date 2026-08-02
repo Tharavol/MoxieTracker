@@ -1,6 +1,6 @@
 --[[
-MoxieTracker - displays Artisan Moxie, Shard of Dundun, and Unalloyed Abundance
-alongside the World of Warcraft crafting window.
+MoxieTracker - displays Artisan Moxie, Shard of Dundun, Unalloyed Abundance,
+and Fused Vitality alongside the World of Warcraft crafting window.
 
 Copyright (C) 2026 Tharavol
 
@@ -42,6 +42,15 @@ local MOXIE_IDS = {
     3266, -- Artisan Tailor's Moxie
 }
 
+-- Bag items, not currencies: these come from C_Item rather than C_CurrencyInfo
+-- and are counted across bags, bank, and reagent bank. Always listed, the same
+-- way ALWAYS_SHOWN_IDS is, so a row at zero reads as "none" rather than
+-- vanishing. `name` is only a fallback for the moments before the client has
+-- cached the item.
+local TRACKED_ITEMS = {
+    { itemID = 245345, name = "Fused Vitality" },
+}
+
 -- Fallback only, for a moxie currency added in a future patch that is not in
 -- MOXIE_IDS yet. Matching by name is locale-dependent and will not fire on a
 -- non-English client, which is precisely why the IDs above are the primary path.
@@ -72,7 +81,41 @@ local QUANTITY_COLOR = {
     end,
 }
 
+-- Same idea for bag items, keyed by item ID.
+local ITEM_QUANTITY_COLOR = {
+    [245345] = function(quantity) -- Fused Vitality
+        return quantity >= 20 and GREEN or YELLOW
+    end,
+}
+
 MoxieTrackerDB = MoxieTrackerDB or {}
+
+-- Stable identity for a row, used as the key for the show/hide setting. IDs are
+-- preferred because names are localized; the name form only ever applies to an
+-- entry that reached us through the keyword fallback with no resolvable ID.
+local function EntryKey(currencyID, itemID, name)
+    if currencyID then
+        return "currency:" .. currencyID
+    elseif itemID then
+        return "item:" .. itemID
+    end
+    return "name:" .. (name or ""):lower()
+end
+
+local function IsHidden(key)
+    return MoxieTrackerDB.hidden ~= nil and MoxieTrackerDB.hidden[key] == true
+end
+
+-- Stored only for hidden rows. Visible is the default, so writing `false` would
+-- grow the saved variables with entries that mean nothing.
+local function SetHidden(key, hidden)
+    if hidden then
+        MoxieTrackerDB.hidden = MoxieTrackerDB.hidden or {}
+        MoxieTrackerDB.hidden[key] = true
+    elseif MoxieTrackerDB.hidden then
+        MoxieTrackerDB.hidden[key] = nil
+    end
+end
 
 -- Offset from the crafting window's TOPRIGHT corner. The panel hangs off the
 -- right edge, dropped down the side. Taken from a placement verified in-game
@@ -185,6 +228,10 @@ local function EnsureLine(index)
                 GameTooltip:SetOwner(self, "ANCHOR_TOPRIGHT")
                 GameTooltip:SetCurrencyByID(self.currencyID)
                 GameTooltip:Show()
+            elseif self.itemID then
+                GameTooltip:SetOwner(self, "ANCHOR_TOPRIGHT")
+                GameTooltip:SetItemByID(self.itemID)
+                GameTooltip:Show()
             end
         end)
         line:SetScript("OnLeave", function()
@@ -215,6 +262,11 @@ for _, currencyID in ipairs(MOXIE_IDS) do
 end
 
 local function GetQuantityColor(entry)
+    if entry.itemID then
+        local itemRule = ITEM_QUANTITY_COLOR[entry.itemID]
+        return itemRule and itemRule(entry.quantity) or WHITE
+    end
+
     local rule = entry.currencyID and QUANTITY_COLOR[entry.currencyID]
     if rule then
         return rule(entry.quantity)
@@ -247,30 +299,51 @@ local function GetCurrencyIDForIndex(index)
     end
 end
 
-local function CollectTracked()
+-- `includeHidden` is for the options panel, which has to list the rows the user
+-- has switched off in order to offer switching them back on.
+local function CollectTracked(includeHidden)
     local tracked = {}
-    local seenID, seenName = {}, {}
+    local seenID, seenItemID, seenName = {}, {}, {}
 
     -- Deduped by both ID and name: the keyword fallback can produce an entry
     -- whose link failed to resolve, leaving it with no ID to match on.
-    local function Add(currencyID, name, quantity)
+    local function Add(currencyID, itemID, name, quantity)
         name = name or "Currency"
         local nameKey = name:lower()
-        if (currencyID and seenID[currencyID]) or seenName[nameKey] then
+        if (currencyID and seenID[currencyID]) or (itemID and seenItemID[itemID]) or seenName[nameKey] then
             return
         end
         if currencyID then
             seenID[currencyID] = true
         end
+        if itemID then
+            seenItemID[itemID] = true
+        end
         seenName[nameKey] = true
-        table.insert(tracked, { name = name, quantity = quantity or 0, currencyID = currencyID })
+
+        -- Marked seen before the hidden check, so a hidden row cannot slip back
+        -- in through a later pass that identifies it a different way.
+        local key = EntryKey(currencyID, itemID, name)
+        local hidden = IsHidden(key)
+        if hidden and not includeHidden then
+            return
+        end
+
+        table.insert(tracked, {
+            name = name,
+            quantity = quantity or 0,
+            currencyID = currencyID,
+            itemID = itemID,
+            key = key,
+            hidden = hidden,
+        })
     end
 
     -- Pass 1: by ID, shown regardless of quantity.
     for _, currencyID in ipairs(ALWAYS_SHOWN_IDS) do
         local info = C_CurrencyInfo.GetCurrencyInfo(currencyID)
         if info and info.name then
-            Add(currencyID, info.name, info.quantity)
+            Add(currencyID, nil, info.name, info.quantity)
         end
     end
 
@@ -278,17 +351,25 @@ local function CollectTracked()
     for _, currencyID in ipairs(MOXIE_IDS) do
         local info = C_CurrencyInfo.GetCurrencyInfo(currencyID)
         if info and info.name and (info.quantity or 0) > 0 then
-            Add(currencyID, info.name, info.quantity)
+            Add(currencyID, nil, info.name, info.quantity)
         end
     end
 
-    -- Pass 3: keyword fallback over the currency list, for anything matching
+    -- Pass 3: bag items. Counted across bags, bank, and reagent bank, so the
+    -- number matches what the character owns rather than what is carried.
+    for _, item in ipairs(TRACKED_ITEMS) do
+        local name = C_Item.GetItemInfo(item.itemID) or item.name
+        local count = C_Item.GetItemCount(item.itemID, true, false, true, true) or 0
+        Add(nil, item.itemID, name, count)
+    end
+
+    -- Pass 4: keyword fallback over the currency list, for anything matching
     -- that neither ID table knows about yet.
     local size = C_CurrencyInfo.GetCurrencyListSize and C_CurrencyInfo.GetCurrencyListSize() or 0
     for index = 1, size do
         local info = C_CurrencyInfo.GetCurrencyListInfo(index)
         if IsTrackedCurrency(info) then
-            Add(GetCurrencyIDForIndex(index), info.name, info.quantity)
+            Add(GetCurrencyIDForIndex(index), nil, info.name, info.quantity)
         end
     end
 
@@ -309,7 +390,11 @@ local function UpdateDisplay()
     if #tracked == 0 then
         local fallback = EnsureLine(1)
         fallback.currencyID = nil
-        fallback.text:SetText("No tracked currencies")
+        fallback.itemID = nil
+        -- Distinguish "nothing to show" from "you hid everything", which would
+        -- otherwise look identical to the addon having broken.
+        local everythingHidden = MoxieTrackerDB.hidden ~= nil and next(MoxieTrackerDB.hidden) ~= nil
+        fallback.text:SetText(everythingHidden and "All rows hidden - /moxie options" or "No tracked currencies")
         fallback:Show()
         frame:SetSize(MIN_WIDTH, 56)
         return
@@ -322,6 +407,7 @@ local function UpdateDisplay()
     for index, entry in ipairs(tracked) do
         local line = EnsureLine(index)
         line.currencyID = entry.currencyID
+        line.itemID = entry.itemID
         line.text:SetText(string.format("%s: %s%d|r", entry.name, GetQuantityColor(entry), entry.quantity))
         line:Show()
         widest = math.max(widest, line.text:GetStringWidth())
@@ -333,8 +419,9 @@ end
 
 frame:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_TOPRIGHT")
-    GameTooltip:SetText("Artisan Moxie, Shard of Dundun, and Unalloyed Abundance")
-    GameTooltip:AddLine("Shows the current character's tracked currency amounts.", 0.7, 0.7, 0.7, true)
+    GameTooltip:SetText("Artisan Moxie, Shard of Dundun, Unalloyed Abundance, Fused Vitality")
+    GameTooltip:AddLine("Shows the current character's tracked amounts. /moxie options to choose rows.",
+        0.7, 0.7, 0.7, true)
     GameTooltip:Show()
 end)
 frame:SetScript("OnLeave", function()
@@ -373,6 +460,18 @@ SafeRegisterEvent("PLAYER_LOGIN")
 SafeRegisterEvent("CURRENCY_TRANSFER_LOG_UPDATE")
 SafeRegisterEvent("TRADE_SKILL_SHOW")
 SafeRegisterEvent("TRADE_SKILL_CLOSE")
+-- Item rows are counted from the bags, so they move on bag changes rather than
+-- on the currency events. GET_ITEM_INFO_RECEIVED redraws the row once the
+-- client has cached the item and its real name replaces the fallback.
+SafeRegisterEvent("BAG_UPDATE_DELAYED")
+SafeRegisterEvent("GET_ITEM_INFO_RECEIVED")
+
+-- Warm the item cache at load so the first draw has real names.
+for _, item in ipairs(TRACKED_ITEMS) do
+    if C_Item.RequestLoadItemDataByID then
+        C_Item.RequestLoadItemDataByID(item.itemID)
+    end
+end
 
 frame:SetScript("OnEvent", function(self, event)
     if event == "TRADE_SKILL_SHOW" then
@@ -422,6 +521,106 @@ else
     end)
 end
 
+-- Options panel. The row list is rebuilt every time the panel is shown rather
+-- than built once at load, because what is trackable changes: moxie rows exist
+-- only for professions the character has, and the keyword fallback can turn up
+-- a currency no ID table knows about.
+local OPTIONS_ROW_HEIGHT = 26
+local OPTIONS_FIRST_ROW_Y = -72
+
+local optionsPanel
+local optionsCategory
+
+local function EnsureOptionRow(index)
+    local row = optionsPanel.rows[index]
+    if not row then
+        row = CreateFrame("CheckButton", "MoxieTrackerOption" .. index, optionsPanel, "UICheckButtonTemplate")
+        row:SetSize(24, 24)
+        row:SetPoint("TOPLEFT", optionsPanel, "TOPLEFT",
+            16, OPTIONS_FIRST_ROW_Y - ((index - 1) * OPTIONS_ROW_HEIGHT))
+
+        -- An explicit label rather than the template's own text region, whose
+        -- name has moved between expansions.
+        row.label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        row.label:SetPoint("LEFT", row, "RIGHT", 4, 0)
+
+        row:SetScript("OnClick", function(self)
+            SetHidden(self.entryKey, not self:GetChecked())
+            if frame:IsShown() then
+                UpdateDisplay()
+            end
+        end)
+
+        optionsPanel.rows[index] = row
+    end
+    return row
+end
+
+local function RefreshOptions()
+    local tracked = CollectTracked(true)
+
+    for _, row in ipairs(optionsPanel.rows) do
+        row:Hide()
+    end
+
+    for index, entry in ipairs(tracked) do
+        local row = EnsureOptionRow(index)
+        row.entryKey = entry.key
+        row.label:SetText(entry.name)
+        row:SetChecked(not entry.hidden)
+        row:Show()
+    end
+
+    if #tracked == 0 then
+        optionsPanel.empty:Show()
+    else
+        optionsPanel.empty:Hide()
+    end
+end
+
+local function CreateOptionsPanel()
+    local panel = CreateFrame("Frame", "MoxieTrackerOptionsPanel", UIParent)
+    panel.name = "MoxieTracker"
+    panel.rows = {}
+
+    local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, -16)
+    title:SetText("MoxieTracker")
+
+    local subtitle = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
+    subtitle:SetPoint("RIGHT", panel, "RIGHT", -16, 0)
+    subtitle:SetJustifyH("LEFT")
+    subtitle:SetText("Uncheck a row to hide it from the tracker. Choices apply to the whole account.")
+
+    panel.empty = panel:CreateFontString(nil, "ARTWORK", "GameFontDisable")
+    panel.empty:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, OPTIONS_FIRST_ROW_Y)
+    panel.empty:SetText("Nothing to configure yet - open a profession or log in on a character with moxie.")
+    panel.empty:Hide()
+
+    -- Hidden until the Settings frame shows it. Also makes OnShow the single
+    -- point where rows are built, rather than it having to run once here too.
+    panel:Hide()
+    panel:SetScript("OnShow", RefreshOptions)
+
+    optionsPanel = panel
+end
+
+CreateOptionsPanel()
+
+if Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnCategory then
+    optionsCategory = Settings.RegisterCanvasLayoutCategory(optionsPanel, "MoxieTracker")
+    Settings.RegisterAddOnCategory(optionsCategory)
+end
+
+local function OpenOptions()
+    if optionsCategory and Settings and Settings.OpenToCategory then
+        Settings.OpenToCategory(optionsCategory:GetID())
+        return true
+    end
+    return false
+end
+
 SLASH_MOXIETRACKER1 = "/moxie"
 SlashCmdList["MOXIETRACKER"] = function(msg)
     msg = (msg or ""):lower():match("^%s*(.-)%s*$")
@@ -445,6 +644,25 @@ SlashCmdList["MOXIETRACKER"] = function(msg)
                     info and tostring(info.quantity or 0) or "n/a"))
             end
         end
+
+        print("|cff33ff99MoxieTracker|r: tracked items")
+        for _, item in ipairs(TRACKED_ITEMS) do
+            local name = C_Item.GetItemInfo(item.itemID)
+            print(string.format("  [item] %d %s = %d%s",
+                item.itemID,
+                name or (item.name .. " |cffff3333(uncached)|r"),
+                C_Item.GetItemCount(item.itemID, true, false, true, true) or 0,
+                IsHidden(EntryKey(nil, item.itemID)) and " |cffff3333(hidden)|r" or ""))
+        end
+
+        local hiddenCount = 0
+        if MoxieTrackerDB.hidden then
+            for key in pairs(MoxieTrackerDB.hidden) do
+                hiddenCount = hiddenCount + 1
+                print(string.format("  [hidden] %s", key))
+            end
+        end
+        print(string.format("|cff33ff99MoxieTracker|r: %d hidden row(s)", hiddenCount))
 
         local size = C_CurrencyInfo.GetCurrencyListSize and C_CurrencyInfo.GetCurrencyListSize() or 0
         print(string.format("|cff33ff99MoxieTracker|r: currency list size = %d", size))
@@ -472,6 +690,23 @@ SlashCmdList["MOXIETRACKER"] = function(msg)
         return
     end
 
+    if msg == "options" or msg == "config" then
+        if not OpenOptions() then
+            print("|cff33ff99MoxieTracker|r: this client has no Settings panel; open Options > AddOns manually.")
+        end
+        return
+    end
+
+    if msg == "showall" then
+        MoxieTrackerDB.hidden = nil
+        if optionsPanel:IsShown() then
+            RefreshOptions()
+        end
+        RefreshVisibility()
+        print("|cff33ff99MoxieTracker|r: every row is visible again.")
+        return
+    end
+
     if msg == "pin" then
         frame.pinned = not frame.pinned
         RefreshVisibility()
@@ -481,6 +716,8 @@ SlashCmdList["MOXIETRACKER"] = function(msg)
     end
 
     print("|cff33ff99MoxieTracker|r: shows automatically with the crafting window.")
+    print("  /moxie options - choose which rows are shown")
+    print("  /moxie showall - unhide every row")
     print("  /moxie pin - keep the panel visible regardless")
     print("  /moxie debug - list currencies")
     print("  /moxie reset - move the panel back to the crafting window's top-right")

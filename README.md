@@ -1,20 +1,24 @@
 # MoxieTracker
 
-MoxieTracker is a World of Warcraft addon for Retail / Midnight that displays the current character's Artisan Moxie, Shard of Dundun, and Unalloyed Abundance currency values in a small movable window. The panel appears automatically when the crafting window opens and hides again when it closes.
+MoxieTracker is a World of Warcraft addon for Retail / Midnight that displays the current character's Artisan Moxie, Shard of Dundun, and Unalloyed Abundance currency values, plus the Fused Vitality item count, in a small movable window. The panel appears automatically when the crafting window opens and hides again when it closes.
 
 ## Features
 
 - Tracks Artisan Moxie for all eleven professions, Shard of Dundun, and Unalloyed Abundance, matched by currency ID so it works on any client locale
-- Shard of Dundun and Unalloyed Abundance always show, even at zero; moxie rows appear only for professions the character actually has
+- Tracks Fused Vitality (item 245345), counted across bags, bank, and reagent bank
+- Shard of Dundun, Unalloyed Abundance, and Fused Vitality always show, even at zero; moxie rows appear only for professions the character actually has
+- Any row can be hidden from the options panel, under Options > AddOns > MoxieTracker or `/moxie options`
 - Remembers one panel position across the whole account
-- Colors each count against its own thresholds: Shard of Dundun is green at 6 and red at 7-8, Unalloyed Abundance is green at 800 or more, Moxie is green at 600 or more, yellow otherwise
+- Colors each count against its own thresholds: Shard of Dundun is green at 6 and red at 7-8, Unalloyed Abundance is green at 800 or more, Moxie is green at 600 or more, Fused Vitality is green at 20 or more, yellow otherwise
 - Docks a compact, draggable panel to the top-right of the crafting window, shown only while that window is open
 - Displays the same tooltip information as the default currency UI when hovering over a line
 
 ## Slash commands
 
+- `/moxie options` - open the options panel and choose which rows are shown
+- `/moxie showall` - unhide every row
 - `/moxie pin` - keep the panel visible even with no profession open
-- `/moxie debug` - print the anchor state, every tracked currency ID with its quantity, then every currency with a nonzero quantity
+- `/moxie debug` - print the anchor state, every tracked currency and item ID with its quantity, the hidden rows, then every currency with a nonzero quantity
 - `/moxie reset` - move the panel back to the crafting window's top-right corner
 
 ## Installation

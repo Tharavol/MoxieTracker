@@ -1,6 +1,6 @@
 ## Interface: 120007
 ## Title: MoxieTracker
-## Notes: Displays current character Artisan Moxie, Shard of Dundun, and Unalloyed Abundance currencies in a movable window.
+## Notes: Displays current character Artisan Moxie, Shard of Dundun, Unalloyed Abundance, and Fused Vitality in a movable window.
 ## Author: Tharavol
 ## Version: @project-version@
 ## SavedVariables: MoxieTrackerDB

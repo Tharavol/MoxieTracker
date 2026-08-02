@@ -5,6 +5,27 @@ All notable changes to MoxieTracker are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-08-02
+
+### Added
+
+- Fused Vitality (item 245345) is now tracked alongside the currencies. It is a
+  bag item rather than a currency, so it is read through `C_Item` and refreshed
+  on `BAG_UPDATE_DELAYED`; the count covers bags, bank, and reagent bank. Like
+  Shard of Dundun it shows even at zero. Its color is green at 20 or more and
+  yellow below that.
+- An options panel under Options > AddOns > MoxieTracker, also reachable with
+  `/moxie options`, with a checkbox per tracked row. Unchecking a row hides it
+  from the panel. The choice is stored account-wide in `MoxieTrackerDB.hidden`
+  and keyed by currency or item ID, so it survives a locale change.
+- `/moxie showall` clears every hidden row at once.
+
+### Changed
+
+- `/moxie debug` also reports tracked items and the currently hidden rows.
+- With every row hidden the panel says so rather than showing "No tracked
+  currencies", which was indistinguishable from the addon having broken.
+
 ## [1.1.1] - 2026-08-01
 
 Packaging and tooling only — no functional changes.
@@ -94,5 +115,7 @@ during load; that tag was removed and reused for this release.
 - The full GPL-3.0 text, replacing a truncated stub that named the license but
   omitted its terms.
 
+[1.2.0]: https://github.com/Tharavol/MoxieTracker/compare/v1.1.1...v1.2.0
+[1.1.1]: https://github.com/Tharavol/MoxieTracker/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/Tharavol/MoxieTracker/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Tharavol/MoxieTracker/releases/tag/v1.0.0

@@ -21,8 +21,10 @@ globals = {
 -- name should fail the check rather than be silently allowed by a broad list.
 read_globals = {
     "C_CurrencyInfo",
+    "C_Item",
     "CreateFrame",
     "EventUtil",
     "GameTooltip",
+    "Settings",
     "UIParent",
 }

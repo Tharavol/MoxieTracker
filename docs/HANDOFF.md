@@ -2,12 +2,12 @@
 
 ## Project summary
 
-MoxieTracker is a World of Warcraft addon for Retail / Midnight that displays current-character Artisan Moxie, Shard of Dundun, and Unalloyed Abundance currency values in a movable panel. The panel is shown while the crafting window is open and hidden otherwise; it defaults to the top-right of that window and can be dragged anywhere.
+MoxieTracker is a World of Warcraft addon for Retail / Midnight that displays current-character Artisan Moxie, Shard of Dundun, and Unalloyed Abundance currency values, plus the Fused Vitality item count, in a movable panel. The panel is shown while the crafting window is open and hidden otherwise; it defaults to the top-right of that window and can be dragged anywhere. Any row can be switched off from the options panel.
 
 ## Current state
 
 - Addon files: MoxieTracker.toc, MoxieTracker.lua
-- Release history is in CHANGELOG.md, following Keep a Changelog. Add an entry there and bump ## Version in the TOC as part of any change worth releasing; both workflows package CHANGELOG.md into the addon folder, and CI fails if it is missing.
+- Release history is in CHANGELOG.md, following Keep a Changelog. Add an entry there as part of any change worth releasing; both workflows package CHANGELOG.md into the addon folder, and CI fails if it is missing. Do not touch ## Version in the TOC: since 1.1.1 it is the literal @project-version@, substituted by the packager from the release tag.
 - Repository root: this folder
 - License: GPL-3.0. LICENSE holds the full 674-line text fetched from gnu.org; it previously held only a 23-line stub that named the license and then cut to "See the GNU GPL for more details", so the terms were not actually stated. MoxieTracker.lua carries the standard GPL notice header, per the "How to Apply These Terms" section of the license.
 - Credits: created by Tharavol, scaffold assisted by GitHub Copilot, Midnight API fixes and crafting window integration by Claude Opus 5 via Claude Code.
@@ -21,9 +21,14 @@ MoxieTracker is a World of Warcraft addon for Retail / Midnight that displays cu
 - The panel anchors its TOPLEFT to ProfessionsFrame's TOPRIGHT, so it sits off the right edge of the crafting window and tracks that window when it moves. The default offset (4, -440) drops it down the right side; it was read back from a placement verified in-game, not guessed.
 - A dragged position can be read off disk without being in-game: it is written to WTF/Account/<ACCOUNT>/<Realm>/<Character>/SavedVariables/MoxieTracker.lua. The file is flushed on /reload or logout, so it is stale until one of those happens. The variable is SavedVariablesPerCharacter, so each character has its own file.
 - Dragging stores an offset from that same TOPRIGHT corner in MoxieTrackerDB, normalized through both frames' effective scales so a dragged position round trips exactly even when the two frames differ in scale. /moxie reset clears it. If the anchor corner in ApplyAnchor is ever changed, SaveOffsetFromAnchor must be changed to match or dragging will jump.
-- /moxie debug reports the current anchor offset, whether it is the default or user placed, and whether the crafting frame was found.
+- /moxie debug reports the current anchor offset, whether it is the default or user placed, whether the crafting frame was found, the tracked items, and every hidden row. /moxie showall clears the hidden table.
 - Currencies are collected in three passes, deduped by both ID and lowercased name. ALWAYS_SHOWN_IDS (Shard of Dundun 3376, Unalloyed Abundance 3377) render even at zero. MOXIE_IDS (3256-3266, one per profession) render only above zero, since every character could otherwise show eleven empty rows. A keyword pass over the currency list then catches anything neither table knows about.
 - Matching is by ID first because currency names are localized: a name scan finds nothing on a non-English client. The keyword list is a fallback for a moxie currency added in a future patch, not the primary path.
+- Fused Vitality (245345) is an item, not a currency, so it comes from C_Item: GetItemCount for the count and GetItemInfo for the name. Its pass in CollectTracked always adds a row, the same way ALWAYS_SHOWN_IDS does, so a zero count reads as "none" rather than as a missing row. Item names are not cached at login, which is why TRACKED_ITEMS carries a fallback name, RequestLoadItemDataByID runs at load, and GET_ITEM_INFO_RECEIVED forces a redraw. Bag counts do not move on currency events, hence BAG_UPDATE_DELAYED.
+- The item count includes bank and reagent bank (GetItemCount(id, true, false, true, true)), so it reads as "how many the character owns" rather than "how many are carried". Change those flags if the count should be bags only.
+- Hidden rows live in MoxieTrackerDB.hidden, keyed by EntryKey: "currency:<id>", "item:<id>", or "name:<lowercased>" for a keyword-fallback row whose link would not resolve. Only hidden rows are stored; visible is the absence of a key, so the table stays empty for a default install. If ApplyAnchor-style ID tables ever change, the keys stay valid because they are IDs rather than names.
+- CollectTracked marks an entry as seen before the hidden check, so a hidden currency cannot re-enter through a later pass that identifies it a different way. CollectTracked(true) returns hidden entries too, which is what the options panel lists.
+- The options panel is a canvas layout category (Settings.RegisterCanvasLayoutCategory plus RegisterAddOnCategory) and rebuilds its checkbox rows in OnShow rather than at load, because the trackable set is not known until runtime: moxie rows exist only for professions the character has, and the keyword fallback can turn up an unknown currency. Rows use an explicit FontString label rather than the UICheckButtonTemplate text region, whose name has moved between expansions.
 - Matching deliberately ignores info.description. Descriptions cross-reference each other -- Shard of Dundun's mentions Unalloyed Abundance -- so matching them pulls in unrelated currencies.
 - Currency IDs are not returned by GetCurrencyListInfo; they are parsed out of GetCurrencyListLink. That call can fail, which is why dedupe also keys on name.
 - GetCurrencyListInfo only enumerates visible rows, so currencies under a collapsed header are invisible to it. The ID passes are immune to this; the keyword fallback is not.
@@ -34,7 +39,8 @@ MoxieTracker is a World of Warcraft addon for Retail / Midnight that displays cu
 
 ## Next steps
 
-- Add optional configuration for position, size, or color if desired.
+- The options panel covers row visibility only. Position, size, and color thresholds are still code-level; the panel is the obvious place to add them.
+- The options panel has no scroll frame. Eleven moxie rows plus the currencies and Fused Vitality fit the settings canvas, but a longer list would run off the bottom.
 - The panel sits well down the right edge (-440). On a short crafting window or a small resolution it could run past the bottom of the screen; SetClampedToScreen keeps it visible but would break the chosen alignment. Worth checking at the smallest resolution in use.
 - Continue development from another machine by cloning from GitHub.
 
