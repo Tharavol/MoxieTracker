@@ -5,6 +5,10 @@
 std = "lua51"
 max_line_length = 120
 
+-- The luarocks CI action installs into .luarocks/ inside the workspace, so
+-- `luacheck .` would otherwise lint the toolchain along with the addon.
+exclude_files = {".luarocks/**", ".luarocks", "lua_modules/**"}
+
 -- Globals this addon defines. MoxieTrackerDB is the SavedVariables table, and
 -- the slash command globals are how the client discovers commands.
 globals = {

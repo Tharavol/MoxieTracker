@@ -5,6 +5,16 @@ All notable changes to MoxieTracker are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-08-01
+
+Packaging and tooling only — no functional changes.
+
+### Changed
+
+- Releases are now built by [BigWigsMods/packager](https://github.com/BigWigsMods/packager) instead of a hand-rolled zip step. The previous workflow copied a hardcoded list of files, so any file added to the addon would have been silently left out of the release until someone remembered to update the list in two places.
+- The version in the TOC now comes from the release tag rather than being maintained by hand, so it can no longer disagree with the release it was published under. Versions now carry a leading `v`.
+- CI now builds the real release zip on every push and checks its layout, so packaging breakage surfaces before a tag rather than after.
+
 ## [1.1.0] - 2026-08-01
 
 ### Added
