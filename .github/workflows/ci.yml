@@ -49,8 +49,14 @@ jobs:
           unzip -l "$zip" | grep -q 'MoxieTracker/MoxieTracker.toc'
           unzip -l "$zip" | grep -q 'MoxieTracker/MoxieTracker.lua'
 
+      # The packager writes to .release/, which is a hidden path. Since
+      # upload-artifact v4.4 hidden files are excluded unless asked for, so
+      # this step uploaded nothing and only logged a warning. if-no-files-found
+      # promotes a future miss to a failure rather than another quiet warning.
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
           name: moxietracker-package
           path: .release/*.zip
+          include-hidden-files: true
+          if-no-files-found: error
