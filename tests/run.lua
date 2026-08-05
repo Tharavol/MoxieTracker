@@ -144,6 +144,36 @@ do
         ns.GetQuantityColor({ currencyID = 9999, name = "Doubloons", quantity = 1 }), WHITE)
 end
 
+--------------------------------------------------------------------------
+-- 4. Threshold overrides. MoxieTrackerDB.thresholds lets the options panel
+-- move these three cutoffs; Shard of Dundun is deliberately not among them
+-- (its rule is a fixed band tied to the currency's actual in-game cap).
+--------------------------------------------------------------------------
+do
+    MoxieTrackerDB.thresholds = { unalloyedAbundance = 900, moxie = 700, fusedVitality = 30 }
+
+    assertEqual("Unalloyed Abundance respects override, below",
+        ns.GetQuantityColor({ currencyID = 3377, quantity = 899 }), YELLOW)
+    assertEqual("Unalloyed Abundance respects override, at",
+        ns.GetQuantityColor({ currencyID = 3377, quantity = 900 }), GREEN)
+
+    assertEqual("Moxie respects override, below", ns.GetQuantityColor({ currencyID = 3256, quantity = 699 }), YELLOW)
+    assertEqual("Moxie respects override, at", ns.GetQuantityColor({ currencyID = 3256, quantity = 700 }), GREEN)
+
+    assertEqual("Fused Vitality respects override, below",
+        ns.GetQuantityColor({ itemID = 245345, quantity = 29 }), YELLOW)
+    assertEqual("Fused Vitality respects override, at",
+        ns.GetQuantityColor({ itemID = 245345, quantity = 30 }), GREEN)
+
+    -- Old default (600) must no longer apply once overridden.
+    assertEqual("Moxie override replaces the default, not adds to it",
+        ns.GetQuantityColor({ currencyID = 3256, quantity = 600 }), YELLOW)
+
+    MoxieTrackerDB.thresholds = nil
+    assertEqual("clearing thresholds falls back to the default",
+        ns.GetQuantityColor({ currencyID = 3256, quantity = 600 }), GREEN)
+end
+
 print(string.format("%d checks, %d failure(s)", count, failures))
 if failures > 0 then
     os.exit(1)

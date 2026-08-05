@@ -81,6 +81,23 @@ local YELLOW = "|cffffd200"
 local RED = "|cffff3333"
 local WHITE = "|cffffffff"
 
+-- User-editable via the options panel's Color thresholds section. Shard of
+-- Dundun is deliberately not here: its rule below is a fixed three-band cutoff
+-- tied to the currency's actual in-game cap of 8, not a single threshold, so
+-- making it editable would invite a config that contradicts the game
+-- mechanic it models.
+local DEFAULT_THRESHOLDS = {
+    unalloyedAbundance = 800,
+    moxie = 600,
+    fusedVitality = 20,
+}
+
+local function GetThreshold(key)
+    local thresholds = MoxieTrackerDB and MoxieTrackerDB.thresholds
+    local value = thresholds and thresholds[key]
+    return type(value) == "number" and value or DEFAULT_THRESHOLDS[key]
+end
+
 -- Quantity coloring, keyed by currency ID. Moxie is deliberately absent: its
 -- ID varies per profession, so it is handled by name in GetQuantityColor.
 ns.QUANTITY_COLOR = {
@@ -94,14 +111,14 @@ ns.QUANTITY_COLOR = {
         return YELLOW
     end,
     [3377] = function(quantity) -- Unalloyed Abundance
-        return quantity >= 800 and GREEN or YELLOW
+        return quantity >= GetThreshold("unalloyedAbundance") and GREEN or YELLOW
     end,
 }
 
 -- Same idea for bag items, keyed by item ID.
 ns.ITEM_QUANTITY_COLOR = {
     [245345] = function(quantity) -- Fused Vitality
-        return quantity >= 20 and GREEN or YELLOW
+        return quantity >= GetThreshold("fusedVitality") and GREEN or YELLOW
     end,
 }
 
@@ -305,7 +322,7 @@ function ns.GetQuantityColor(entry)
     local isMoxie = (entry.currencyID and MOXIE_ID_SET[entry.currencyID])
         or (entry.name and entry.name:lower():find("moxie", 1, true))
     if isMoxie then
-        return entry.quantity >= 600 and GREEN or YELLOW
+        return entry.quantity >= GetThreshold("moxie") and GREEN or YELLOW
     end
     return WHITE
 end
@@ -586,7 +603,14 @@ local OPTIONS_POSITION_X_ROW_Y = OPTIONS_POSITION_HEADER_Y - OPTIONS_HEADER_HEIG
 local OPTIONS_POSITION_Y_ROW_Y = OPTIONS_POSITION_X_ROW_Y - OPTIONS_ROW_HEIGHT
 local OPTIONS_POSITION_RESET_Y = OPTIONS_POSITION_Y_ROW_Y - OPTIONS_ROW_HEIGHT
 
-local OPTIONS_FIRST_ROW_Y = OPTIONS_POSITION_RESET_Y - OPTIONS_ROW_HEIGHT - OPTIONS_SECTION_GAP
+-- Threshold section: a header, three threshold fields, and a reset button.
+local OPTIONS_THRESHOLD_HEADER_Y = OPTIONS_POSITION_RESET_Y - OPTIONS_ROW_HEIGHT - OPTIONS_SECTION_GAP
+local OPTIONS_THRESHOLD_UA_ROW_Y = OPTIONS_THRESHOLD_HEADER_Y - OPTIONS_HEADER_HEIGHT
+local OPTIONS_THRESHOLD_MOXIE_ROW_Y = OPTIONS_THRESHOLD_UA_ROW_Y - OPTIONS_ROW_HEIGHT
+local OPTIONS_THRESHOLD_FV_ROW_Y = OPTIONS_THRESHOLD_MOXIE_ROW_Y - OPTIONS_ROW_HEIGHT
+local OPTIONS_THRESHOLD_RESET_Y = OPTIONS_THRESHOLD_FV_ROW_Y - OPTIONS_ROW_HEIGHT
+
+local OPTIONS_FIRST_ROW_Y = OPTIONS_THRESHOLD_RESET_Y - OPTIONS_ROW_HEIGHT - OPTIONS_SECTION_GAP
 
 local optionsPanel
 local optionsCategory
@@ -638,6 +662,10 @@ local function RefreshOptions()
     local offsetX, offsetY = GetOffset()
     optionsPanel.xEditBox:SetText(tostring(offsetX))
     optionsPanel.yEditBox:SetText(tostring(offsetY))
+
+    optionsPanel.unalloyedEditBox:SetText(tostring(GetThreshold("unalloyedAbundance")))
+    optionsPanel.moxieEditBox:SetText(tostring(GetThreshold("moxie")))
+    optionsPanel.fusedVitalityEditBox:SetText(tostring(GetThreshold("fusedVitality")))
 
     local tracked = ns.CollectTracked(true)
 
@@ -735,6 +763,69 @@ local function CreateOptionsPanel()
         local x, y = GetOffset()
         xEditBox:SetText(tostring(x))
         yEditBox:SetText(tostring(y))
+    end)
+
+    local thresholdHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    thresholdHeader:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, OPTIONS_THRESHOLD_HEADER_Y)
+    thresholdHeader:SetText("Color thresholds")
+
+    -- Thresholds are always non-negative, so SetNumeric(true) is enough
+    -- validation on its own; a cleared box (empty string) still needs the
+    -- same tonumber() nil-check as the position fields.
+    local unalloyedEditBox = CreateSettingField(panel, OPTIONS_THRESHOLD_UA_ROW_Y, "Unalloyed Abundance")
+    local moxieEditBox = CreateSettingField(panel, OPTIONS_THRESHOLD_MOXIE_ROW_Y, "Moxie")
+    local fusedVitalityEditBox = CreateSettingField(panel, OPTIONS_THRESHOLD_FV_ROW_Y, "Fused Vitality")
+    for _, box in ipairs({ unalloyedEditBox, moxieEditBox, fusedVitalityEditBox }) do
+        box:SetNumeric(true)
+    end
+    panel.unalloyedEditBox = unalloyedEditBox
+    panel.moxieEditBox = moxieEditBox
+    panel.fusedVitalityEditBox = fusedVitalityEditBox
+
+    -- Each threshold commits independently, unlike the offset pair: they are
+    -- unrelated settings, so one bad entry should not revert the others.
+    local function CommitThreshold(box, key)
+        local value = tonumber(box:GetText())
+        if not value then
+            box:SetText(tostring(GetThreshold(key)))
+            return
+        end
+        MoxieTrackerDB.thresholds = MoxieTrackerDB.thresholds or {}
+        MoxieTrackerDB.thresholds[key] = value
+        if frame:IsShown() then
+            UpdateDisplay()
+        end
+    end
+
+    for _, field in ipairs({
+        { box = unalloyedEditBox, key = "unalloyedAbundance" },
+        { box = moxieEditBox, key = "moxie" },
+        { box = fusedVitalityEditBox, key = "fusedVitality" },
+    }) do
+        field.box:SetScript("OnEnterPressed", function(self)
+            CommitThreshold(field.box, field.key)
+            self:ClearFocus()
+        end)
+        field.box:SetScript("OnEscapePressed", function(self)
+            self:ClearFocus()
+        end)
+        field.box:SetScript("OnEditFocusLost", function()
+            CommitThreshold(field.box, field.key)
+        end)
+    end
+
+    local resetThresholdsButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    resetThresholdsButton:SetSize(120, 22)
+    resetThresholdsButton:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, OPTIONS_THRESHOLD_RESET_Y)
+    resetThresholdsButton:SetText("Reset thresholds")
+    resetThresholdsButton:SetScript("OnClick", function()
+        MoxieTrackerDB.thresholds = nil
+        unalloyedEditBox:SetText(tostring(GetThreshold("unalloyedAbundance")))
+        moxieEditBox:SetText(tostring(GetThreshold("moxie")))
+        fusedVitalityEditBox:SetText(tostring(GetThreshold("fusedVitality")))
+        if frame:IsShown() then
+            UpdateDisplay()
+        end
     end)
 
     panel.empty = panel:CreateFontString(nil, "ARTWORK", "GameFontDisable")

@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fields and a reset button, so the panel's position no longer requires
   dragging or `/moxie reset`. The two fields commit as a pair and revert to
   the last valid value on bad input.
+- A "Color thresholds" section in the options panel exposing the Unalloyed
+  Abundance, Moxie, and Fused Vitality green-at cutoffs as editable fields,
+  stored in `MoxieTrackerDB.thresholds` with a reset button. Shard of Dundun
+  is deliberately not included: its rule is a fixed three-band cutoff tied to
+  the currency's actual in-game cap of 8, not a single threshold.
 
 ### Removed
 
