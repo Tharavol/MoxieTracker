@@ -38,6 +38,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The release archive no longer includes `tests/`. It has shipped there since
   v1.4.0 added the test suite; dev-only tooling has no reason to reach an
   installed copy of the addon. CI now fails if it reappears.
+- The options panel's row-visibility list rendered nothing at all -- not even
+  the "Nothing to configure yet" message -- because its scroll frame's height
+  was anchored to the options panel's bottom edge, and a canvas settings
+  category is not guaranteed to stretch the frame it is given to fill the
+  available space. An unresolved anchor against an unsized panel produces a
+  silent zero-height scroll frame rather than an error. The scroll frame now
+  uses an explicit fixed height instead.
 
 ### Removed
 

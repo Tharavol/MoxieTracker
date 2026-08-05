@@ -254,10 +254,18 @@ local function CreateOptionsPanel()
     -- canvas, and the keyword fallback can add rows beyond what any fixed
     -- layout could guarantee fits. UIPanelScrollFrameTemplate brings its own
     -- scrollbar, so there is no custom scroll code to maintain.
+    --
+    -- Height is explicit rather than anchored to the panel's bottom edge:
+    -- canvas settings categories are not guaranteed to stretch the frame we
+    -- register to fill the available area, and an unresolved BOTTOMRIGHT
+    -- anchor against an unsized panel silently produces a zero-height (and
+    -- so invisible) scroll frame rather than an error.
+    local OPTIONS_SCROLL_HEIGHT = 260
     local scrollFrame = CreateFrame("ScrollFrame", "MoxieTrackerOptionsScrollFrame", panel,
         "UIPanelScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, OPTIONS_FIRST_ROW_Y)
-    scrollFrame:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -32, 16)
+    scrollFrame:SetPoint("RIGHT", panel, "RIGHT", -32, 0)
+    scrollFrame:SetHeight(OPTIONS_SCROLL_HEIGHT)
 
     local rowsContent = CreateFrame("Frame", nil, scrollFrame)
     rowsContent:SetPoint("TOPLEFT")
