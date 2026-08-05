@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A "Position" section in the options panel with horizontal/vertical offset
+  fields and a reset button, so the panel's position no longer requires
+  dragging or `/moxie reset`. The two fields commit as a pair and revert to
+  the last valid value on bad input.
+
 ### Removed
 
 - `release.yml` no longer wires `CF_API_KEY`, `WOWI_API_TOKEN`, or

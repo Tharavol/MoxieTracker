@@ -477,6 +477,15 @@ local function SetCraftOpen(isOpen)
     RefreshVisibility()
 end
 
+-- Shared by /moxie reset and the options panel's "Reset position" button, so
+-- the two never drift apart.
+local function ResetPosition()
+    MoxieTrackerDB.offsetX = nil
+    MoxieTrackerDB.offsetY = nil
+    ApplyAnchor()
+    RefreshVisibility()
+end
+
 -- Registering an event the client does not know about raises an error, which
 -- would abort the rest of this file. Register optional events defensively.
 local function SafeRegisterEvent(event)
@@ -567,11 +576,36 @@ end
 -- only for professions the character has, and the keyword fallback can turn up
 -- a currency no ID table knows about.
 local OPTIONS_ROW_HEIGHT = 26
+local OPTIONS_HEADER_HEIGHT = 20
+local OPTIONS_SECTION_GAP = 6
 local OPTIONS_LOGIN_ROW_Y = -72
-local OPTIONS_FIRST_ROW_Y = OPTIONS_LOGIN_ROW_Y - OPTIONS_ROW_HEIGHT
+
+-- Position section: a header, two offset fields, and a reset button.
+local OPTIONS_POSITION_HEADER_Y = OPTIONS_LOGIN_ROW_Y - OPTIONS_ROW_HEIGHT
+local OPTIONS_POSITION_X_ROW_Y = OPTIONS_POSITION_HEADER_Y - OPTIONS_HEADER_HEIGHT
+local OPTIONS_POSITION_Y_ROW_Y = OPTIONS_POSITION_X_ROW_Y - OPTIONS_ROW_HEIGHT
+local OPTIONS_POSITION_RESET_Y = OPTIONS_POSITION_Y_ROW_Y - OPTIONS_ROW_HEIGHT
+
+local OPTIONS_FIRST_ROW_Y = OPTIONS_POSITION_RESET_Y - OPTIONS_ROW_HEIGHT - OPTIONS_SECTION_GAP
 
 local optionsPanel
 local optionsCategory
+
+-- Builds a "Label:  [box]" row for a settings section. Callers wire up
+-- validation and commit handlers per field, since signed offsets and
+-- non-negative thresholds validate differently.
+local function CreateSettingField(parent, y, labelText)
+    local label = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    label:SetPoint("TOPLEFT", parent, "TOPLEFT", 16, y)
+    label:SetText(labelText)
+
+    local editBox = CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
+    editBox:SetSize(60, 20)
+    editBox:SetAutoFocus(false)
+    editBox:SetPoint("LEFT", label, "RIGHT", 8, 0)
+
+    return editBox
+end
 
 local function EnsureOptionRow(index)
     local row = optionsPanel.rows[index]
@@ -600,6 +634,10 @@ end
 
 local function RefreshOptions()
     optionsPanel.loginCheckbox:SetChecked(not MoxieTrackerDB.suppressLoginMessage)
+
+    local offsetX, offsetY = GetOffset()
+    optionsPanel.xEditBox:SetText(tostring(offsetX))
+    optionsPanel.yEditBox:SetText(tostring(offsetY))
 
     local tracked = ns.CollectTracked(true)
 
@@ -647,6 +685,57 @@ local function CreateOptionsPanel()
         MoxieTrackerDB.suppressLoginMessage = not self:GetChecked()
     end)
     panel.loginCheckbox = loginCheckbox
+
+    local positionHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    positionHeader:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, OPTIONS_POSITION_HEADER_Y)
+    positionHeader:SetText("Position")
+
+    -- Offsets are signed (the default vertical offset is -440), so these are
+    -- plain EditBoxes with manual tonumber() validation rather than
+    -- SetNumeric(true), which does not allow a minus sign.
+    local xEditBox = CreateSettingField(panel, OPTIONS_POSITION_X_ROW_Y, "Horizontal offset")
+    local yEditBox = CreateSettingField(panel, OPTIONS_POSITION_Y_ROW_Y, "Vertical offset")
+    panel.xEditBox = xEditBox
+    panel.yEditBox = yEditBox
+
+    -- Both fields commit together: a half-valid pair would anchor the panel
+    -- off just one bad entry, so invalid input reverts both to their last
+    -- stored (or default) value instead of applying only the valid one.
+    local function CommitOffset()
+        local x = tonumber(xEditBox:GetText())
+        local y = tonumber(yEditBox:GetText())
+        if not x or not y then
+            local currentX, currentY = GetOffset()
+            xEditBox:SetText(tostring(currentX))
+            yEditBox:SetText(tostring(currentY))
+            return
+        end
+        MoxieTrackerDB.offsetX = x
+        MoxieTrackerDB.offsetY = y
+        ApplyAnchor()
+    end
+
+    for _, box in ipairs({ xEditBox, yEditBox }) do
+        box:SetScript("OnEnterPressed", function(self)
+            CommitOffset()
+            self:ClearFocus()
+        end)
+        box:SetScript("OnEscapePressed", function(self)
+            self:ClearFocus()
+        end)
+        box:SetScript("OnEditFocusLost", CommitOffset)
+    end
+
+    local resetPositionButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    resetPositionButton:SetSize(120, 22)
+    resetPositionButton:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, OPTIONS_POSITION_RESET_Y)
+    resetPositionButton:SetText("Reset position")
+    resetPositionButton:SetScript("OnClick", function()
+        ResetPosition()
+        local x, y = GetOffset()
+        xEditBox:SetText(tostring(x))
+        yEditBox:SetText(tostring(y))
+    end)
 
     panel.empty = panel:CreateFontString(nil, "ARTWORK", "GameFontDisable")
     panel.empty:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, OPTIONS_FIRST_ROW_Y)
@@ -740,10 +829,7 @@ SlashCmdList["MOXIETRACKER"] = function(msg)
     end
 
     if msg == "reset" then
-        MoxieTrackerDB.offsetX = nil
-        MoxieTrackerDB.offsetY = nil
-        ApplyAnchor()
-        RefreshVisibility()
+        ResetPosition()
         print("|cff33ff99MoxieTracker|r: position reset to the crafting window's top-right corner.")
         return
     end
