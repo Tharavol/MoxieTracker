@@ -5,6 +5,20 @@ All notable changes to MoxieTracker are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- An addon-private `ns` table (`local ADDON_NAME, ns = ...`) now carries the
+  ID/color tables and the `EntryKey`, `GetQuantityColor`, and `CollectTracked`
+  functions, instead of them being file-locals. No behavior change; this
+  makes the pure collection logic reachable from outside MoxieTracker.lua.
+- A headless test suite under `tests/`, run with `lua5.1 tests/run.lua` and
+  wired into CI. `tests/stub.lua` fakes the WoW API surface the addon touches
+  at load; the tests cover the dedupe/hidden-row precedence invariant in
+  `CollectTracked`, `EntryKey`'s persisted-key format, and the color
+  thresholds.
+
 ## [1.3.0] - 2026-08-05
 
 ### Added

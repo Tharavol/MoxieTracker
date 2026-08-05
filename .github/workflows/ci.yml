@@ -24,6 +24,9 @@ jobs:
         run: |
           grep -qE '^## Interface: [0-9]+$' MoxieTracker.toc
 
+      - name: Run tests
+        run: lua5.1 tests/run.lua
+
       - uses: leafo/gh-actions-lua@v13
         with:
           luaVersion: "5.1"
