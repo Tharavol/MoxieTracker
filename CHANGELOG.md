@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stored in `MoxieTrackerDB.thresholds` with a reset button. Shard of Dundun
   is deliberately not included: its rule is a fixed three-band cutoff tied to
   the currency's actual in-game cap of 8, not a single threshold.
+- The row-visibility checkbox list now scrolls, using a native
+  `UIPanelScrollFrameTemplate`. The Position and Color thresholds sections
+  above it already push the fixed header content close to a screen's worth,
+  and the keyword fallback can add rows a fixed layout couldn't guarantee fit.
 
 ### Removed
 

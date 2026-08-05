@@ -634,10 +634,12 @@ end
 local function EnsureOptionRow(index)
     local row = optionsPanel.rows[index]
     if not row then
-        row = CreateFrame("CheckButton", "MoxieTrackerOption" .. index, optionsPanel, "UICheckButtonTemplate")
+        -- Parented to the scroll frame's content child, not the panel: rows
+        -- need to scroll with the list, not sit fixed against the canvas.
+        row = CreateFrame("CheckButton", "MoxieTrackerOption" .. index,
+            optionsPanel.rowsContent, "UICheckButtonTemplate")
         row:SetSize(24, 24)
-        row:SetPoint("TOPLEFT", optionsPanel, "TOPLEFT",
-            16, OPTIONS_FIRST_ROW_Y - ((index - 1) * OPTIONS_ROW_HEIGHT))
+        row:SetPoint("TOPLEFT", optionsPanel.rowsContent, "TOPLEFT", 0, -((index - 1) * OPTIONS_ROW_HEIGHT))
 
         -- An explicit label rather than the template's own text region, whose
         -- name has moved between expansions.
@@ -680,6 +682,11 @@ local function RefreshOptions()
         row:SetChecked(not entry.hidden)
         row:Show()
     end
+
+    -- Content height drives whether the scroll frame's bar is usable at all;
+    -- floored at 1 rather than 0, since a zero-height scroll child is what
+    -- some client versions treat as "not scrollable" even once rows appear.
+    optionsPanel.rowsContent:SetHeight(math.max(1, #tracked * OPTIONS_ROW_HEIGHT))
 
     if #tracked == 0 then
         optionsPanel.empty:Show()
@@ -828,8 +835,25 @@ local function CreateOptionsPanel()
         end
     end)
 
-    panel.empty = panel:CreateFontString(nil, "ARTWORK", "GameFontDisable")
-    panel.empty:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, OPTIONS_FIRST_ROW_Y)
+    -- The row-visibility checkboxes scroll: the Position and Threshold
+    -- sections above already push the fixed header content close to a full
+    -- canvas, and the keyword fallback can add rows beyond what any fixed
+    -- layout could guarantee fits. UIPanelScrollFrameTemplate brings its own
+    -- scrollbar, so there is no custom scroll code to maintain.
+    local scrollFrame = CreateFrame("ScrollFrame", "MoxieTrackerOptionsScrollFrame", panel,
+        "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, OPTIONS_FIRST_ROW_Y)
+    scrollFrame:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -32, 16)
+
+    local rowsContent = CreateFrame("Frame", nil, scrollFrame)
+    rowsContent:SetPoint("TOPLEFT")
+    rowsContent:SetPoint("TOPRIGHT")
+    rowsContent:SetHeight(1)
+    scrollFrame:SetScrollChild(rowsContent)
+    panel.rowsContent = rowsContent
+
+    panel.empty = rowsContent:CreateFontString(nil, "ARTWORK", "GameFontDisable")
+    panel.empty:SetPoint("TOPLEFT", rowsContent, "TOPLEFT", 0, 0)
     panel.empty:SetText("Nothing to configure yet - open a profession or log in on a character with moxie.")
     panel.empty:Hide()
 
