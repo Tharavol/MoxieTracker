@@ -18,7 +18,12 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 --]]
 
-local ADDON_NAME = ...
+-- ns is addon-private: it is the vararg table WoW hands every file listed in
+-- the TOC, not a global, so exposing pure logic on it does not add anything
+-- luacheck needs to know about. Kept minimal on purpose -- only what a second
+-- file or a test harness needs to reach: the ID/colour tables and the
+-- functions that turn them into tracked rows.
+local ADDON_NAME, ns = ...
 
 -- The TOC's @project-version@ placeholder is only substituted by the packager
 -- at release time, so an unpackaged dev copy still carries the literal token.
@@ -33,14 +38,14 @@ end
 -- Shown even at zero. A currency the character has not discovered is absent
 -- from the currency list entirely, so these must be queried by ID or they would
 -- silently have no row at all.
-local ALWAYS_SHOWN_IDS = {
+ns.ALWAYS_SHOWN_IDS = {
     3376, -- Shard of Dundun
     3377, -- Unalloyed Abundance
 }
 
 -- Shown only when held. Every character can theoretically hold all eleven, so
 -- listing them unconditionally would fill the panel with empty rows.
-local MOXIE_IDS = {
+ns.MOXIE_IDS = {
     3256, -- Artisan Alchemist's Moxie
     3257, -- Artisan Blacksmith's Moxie
     3258, -- Artisan Enchanter's Moxie
@@ -59,14 +64,14 @@ local MOXIE_IDS = {
 -- way ALWAYS_SHOWN_IDS is, so a row at zero reads as "none" rather than
 -- vanishing. `name` is only a fallback for the moments before the client has
 -- cached the item.
-local TRACKED_ITEMS = {
+ns.TRACKED_ITEMS = {
     { itemID = 245345, name = "Fused Vitality" },
 }
 
 -- Fallback only, for a moxie currency added in a future patch that is not in
 -- MOXIE_IDS yet. Matching by name is locale-dependent and will not fire on a
 -- non-English client, which is precisely why the IDs above are the primary path.
-local KEYWORDS = {
+ns.KEYWORDS = {
     "moxie",
     "dundun",
 }
@@ -78,7 +83,7 @@ local WHITE = "|cffffffff"
 
 -- Quantity coloring, keyed by currency ID. Moxie is deliberately absent: its
 -- ID varies per profession, so it is handled by name in GetQuantityColor.
-local QUANTITY_COLOR = {
+ns.QUANTITY_COLOR = {
     -- Shard of Dundun caps at 8, so the yellow fallback only ever covers 0-5.
     [3376] = function(quantity)
         if quantity == 6 then
@@ -94,7 +99,7 @@ local QUANTITY_COLOR = {
 }
 
 -- Same idea for bag items, keyed by item ID.
-local ITEM_QUANTITY_COLOR = {
+ns.ITEM_QUANTITY_COLOR = {
     [245345] = function(quantity) -- Fused Vitality
         return quantity >= 20 and GREEN or YELLOW
     end,
@@ -108,7 +113,7 @@ local ITEM_QUANTITY_COLOR = {
 -- Stable identity for a row, used as the key for the show/hide setting. IDs are
 -- preferred because names are localized; the name form only ever applies to an
 -- entry that reached us through the keyword fallback with no resolvable ID.
-local function EntryKey(currencyID, itemID, name)
+function ns.EntryKey(currencyID, itemID, name)
     if currencyID then
         return "currency:" .. currencyID
     elseif itemID then
@@ -265,7 +270,7 @@ local function MatchesKeyword(text)
         return false
     end
     text = text:lower()
-    for _, keyword in ipairs(KEYWORDS) do
+    for _, keyword in ipairs(ns.KEYWORDS) do
         if text:find(keyword, 1, true) then
             return true
         end
@@ -274,24 +279,24 @@ local function MatchesKeyword(text)
 end
 
 local MOXIE_ID_SET = {}
-for _, currencyID in ipairs(MOXIE_IDS) do
+for _, currencyID in ipairs(ns.MOXIE_IDS) do
     MOXIE_ID_SET[currencyID] = true
 end
 
 -- GET_ITEM_INFO_RECEIVED fires for every item entering the client's cache, not
 -- just ones this addon tracks, so redraws must be filtered down to these IDs.
 local TRACKED_ITEM_ID_SET = {}
-for _, item in ipairs(TRACKED_ITEMS) do
+for _, item in ipairs(ns.TRACKED_ITEMS) do
     TRACKED_ITEM_ID_SET[item.itemID] = true
 end
 
-local function GetQuantityColor(entry)
+function ns.GetQuantityColor(entry)
     if entry.itemID then
-        local itemRule = ITEM_QUANTITY_COLOR[entry.itemID]
+        local itemRule = ns.ITEM_QUANTITY_COLOR[entry.itemID]
         return itemRule and itemRule(entry.quantity) or WHITE
     end
 
-    local rule = entry.currencyID and QUANTITY_COLOR[entry.currencyID]
+    local rule = entry.currencyID and ns.QUANTITY_COLOR[entry.currencyID]
     if rule then
         return rule(entry.quantity)
     end
@@ -325,7 +330,7 @@ end
 
 -- `includeHidden` is for the options panel, which has to list the rows the user
 -- has switched off in order to offer switching them back on.
-local function CollectTracked(includeHidden)
+function ns.CollectTracked(includeHidden)
     local tracked = {}
     local seenID, seenItemID, seenName = {}, {}, {}
 
@@ -347,7 +352,7 @@ local function CollectTracked(includeHidden)
 
         -- Marked seen before the hidden check, so a hidden row cannot slip back
         -- in through a later pass that identifies it a different way.
-        local key = EntryKey(currencyID, itemID, name)
+        local key = ns.EntryKey(currencyID, itemID, name)
         local hidden = IsHidden(key)
         if hidden and not includeHidden then
             return
@@ -364,7 +369,7 @@ local function CollectTracked(includeHidden)
     end
 
     -- Pass 1: by ID, shown regardless of quantity.
-    for _, currencyID in ipairs(ALWAYS_SHOWN_IDS) do
+    for _, currencyID in ipairs(ns.ALWAYS_SHOWN_IDS) do
         local info = C_CurrencyInfo.GetCurrencyInfo(currencyID)
         if info and info.name then
             Add(currencyID, nil, info.name, info.quantity)
@@ -372,7 +377,7 @@ local function CollectTracked(includeHidden)
     end
 
     -- Pass 2: by ID, only for professions this character actually has.
-    for _, currencyID in ipairs(MOXIE_IDS) do
+    for _, currencyID in ipairs(ns.MOXIE_IDS) do
         local info = C_CurrencyInfo.GetCurrencyInfo(currencyID)
         if info and info.name and (info.quantity or 0) > 0 then
             Add(currencyID, nil, info.name, info.quantity)
@@ -381,7 +386,7 @@ local function CollectTracked(includeHidden)
 
     -- Pass 3: bag items. Counted across bags, bank, and reagent bank, so the
     -- number matches what the character owns rather than what is carried.
-    for _, item in ipairs(TRACKED_ITEMS) do
+    for _, item in ipairs(ns.TRACKED_ITEMS) do
         local name = C_Item.GetItemInfo(item.itemID) or item.name
         local count = C_Item.GetItemCount(item.itemID, true, false, true, true) or 0
         Add(nil, item.itemID, name, count)
@@ -405,7 +410,7 @@ local function CollectTracked(includeHidden)
 end
 
 local function UpdateDisplay()
-    local tracked = CollectTracked()
+    local tracked = ns.CollectTracked()
 
     for index = 1, #frame.lines do
         frame.lines[index]:Hide()
@@ -432,7 +437,7 @@ local function UpdateDisplay()
         local line = EnsureLine(index)
         line.currencyID = entry.currencyID
         line.itemID = entry.itemID
-        line.text:SetText(string.format("%s: %s%d|r", entry.name, GetQuantityColor(entry), entry.quantity))
+        line.text:SetText(string.format("%s: %s%d|r", entry.name, ns.GetQuantityColor(entry), entry.quantity))
         line:Show()
         widest = math.max(widest, line.text:GetStringWidth())
     end
@@ -492,7 +497,7 @@ SafeRegisterEvent("BAG_UPDATE_DELAYED")
 SafeRegisterEvent("GET_ITEM_INFO_RECEIVED")
 
 -- Warm the item cache at load so the first draw has real names.
-for _, item in ipairs(TRACKED_ITEMS) do
+for _, item in ipairs(ns.TRACKED_ITEMS) do
     if C_Item.RequestLoadItemDataByID then
         C_Item.RequestLoadItemDataByID(item.itemID)
     end
@@ -596,7 +601,7 @@ end
 local function RefreshOptions()
     optionsPanel.loginCheckbox:SetChecked(not MoxieTrackerDB.suppressLoginMessage)
 
-    local tracked = CollectTracked(true)
+    local tracked = ns.CollectTracked(true)
 
     for _, row in ipairs(optionsPanel.rows) do
         row:Hide()
@@ -688,7 +693,7 @@ SlashCmdList["MOXIETRACKER"] = function(msg)
         -- Queried by ID so zero-quantity and undiscovered currencies still
         -- report, which the currency-list walk below cannot show.
         print("|cff33ff99MoxieTracker|r: tracked IDs")
-        for _, group in ipairs({ { "always", ALWAYS_SHOWN_IDS }, { "moxie", MOXIE_IDS } }) do
+        for _, group in ipairs({ { "always", ns.ALWAYS_SHOWN_IDS }, { "moxie", ns.MOXIE_IDS } }) do
             for _, currencyID in ipairs(group[2]) do
                 local info = C_CurrencyInfo.GetCurrencyInfo(currencyID)
                 print(string.format("  [%s] %d %s = %s",
@@ -699,13 +704,13 @@ SlashCmdList["MOXIETRACKER"] = function(msg)
         end
 
         print("|cff33ff99MoxieTracker|r: tracked items")
-        for _, item in ipairs(TRACKED_ITEMS) do
+        for _, item in ipairs(ns.TRACKED_ITEMS) do
             local name = C_Item.GetItemInfo(item.itemID)
             print(string.format("  [item] %d %s = %d%s",
                 item.itemID,
                 name or (item.name .. " |cffff3333(uncached)|r"),
                 C_Item.GetItemCount(item.itemID, true, false, true, true) or 0,
-                IsHidden(EntryKey(nil, item.itemID)) and " |cffff3333(hidden)|r" or ""))
+                IsHidden(ns.EntryKey(nil, item.itemID)) and " |cffff3333(hidden)|r" or ""))
         end
 
         local hiddenCount = 0
