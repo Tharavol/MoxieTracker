@@ -5,6 +5,16 @@ All notable changes to MoxieTracker are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Removed
+
+- `release.yml` no longer wires `CF_API_KEY`, `WOWI_API_TOKEN`, or
+  `WAGO_API_TOKEN` into the packager. None were set, the TOC never declared
+  `## X-Curse-Project-ID` the CurseForge path needs, and GitHub Releases is
+  the only channel actually in use. Simpler to drop the dead wiring than
+  carry secrets and a TOC field for a release path that doesn't exist yet.
+
 ## [1.4.0] - 2026-08-05
 
 ### Added
