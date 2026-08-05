@@ -1,14 +1,29 @@
 -- Headless tests for the pure logic exposed on MoxieTracker's addon-private
--- `ns` table (see MoxieTracker.lua:21 and #12). Run with: lua5.1 tests/run.lua
+-- `ns` table (see MoxieTracker_Config.lua and #12). Run with:
+-- lua5.1 tests/run.lua
 -- Exits non-zero on any failure so CI catches a regression here the same way
 -- it catches a luacheck or syntax failure.
 
 local stub = dofile("tests/stub.lua")
 local fixtures = stub.install()
 
+-- Loads every Lua file MoxieTracker.toc lists, in order, against a shared ns
+-- -- mirrors exactly how the client loads a multi-file addon (#14), and
+-- stays correct automatically as files are added or reordered later.
+local function LoadAddonFiles(tocPath, addonName, ns)
+    local toc = assert(io.open(tocPath, "r"))
+    for line in toc:lines() do
+        local file = line:match("^%s*(.-)%s*$")
+        if file ~= "" and not file:match("^##") then
+            local chunk = assert(loadfile(file))
+            chunk(addonName, ns)
+        end
+    end
+    toc:close()
+end
+
 local ns = {}
-local loadAddon = assert(loadfile("MoxieTracker.lua"))
-loadAddon("MoxieTracker", ns)
+LoadAddonFiles("MoxieTracker.toc", "MoxieTracker", ns)
 
 local failures = 0
 local count = 0

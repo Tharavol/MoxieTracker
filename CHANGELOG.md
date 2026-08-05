@@ -23,6 +23,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   above it already push the fixed header content close to a screen's worth,
   and the keyword fallback can add rows a fixed layout couldn't guarantee fit.
 
+### Changed
+
+- MoxieTracker.lua split into five files along the config / collect / ui /
+  options / commands seam (MoxieTracker_Config.lua, _Collect.lua, _UI.lua,
+  _Options.lua, _Commands.lua), sharing state through the addon-private `ns`
+  table from #12. No behavior change; done now because the Position and Color
+  thresholds sections above already roughly doubled the options panel code.
+  `tests/run.lua` now loads whichever files MoxieTracker.toc lists, in order,
+  instead of a single hardcoded filename.
+
+### Fixed
+
+- The release archive no longer includes `tests/`. It has shipped there since
+  v1.4.0 added the test suite; dev-only tooling has no reason to reach an
+  installed copy of the addon. CI now fails if it reappears.
+
 ### Removed
 
 - `release.yml` no longer wires `CF_API_KEY`, `WOWI_API_TOKEN`, or

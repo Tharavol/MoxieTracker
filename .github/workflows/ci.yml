@@ -62,8 +62,19 @@ jobs:
           zip=$(ls .release/*.zip)
           unzip -l "$zip"
           unzip -l "$zip" | grep -q 'MoxieTracker/MoxieTracker.toc'
-          unzip -l "$zip" | grep -q 'MoxieTracker/MoxieTracker.lua'
+          unzip -l "$zip" | grep -q 'MoxieTracker/MoxieTracker_Config.lua'
+          unzip -l "$zip" | grep -q 'MoxieTracker/MoxieTracker_Collect.lua'
+          unzip -l "$zip" | grep -q 'MoxieTracker/MoxieTracker_UI.lua'
+          unzip -l "$zip" | grep -q 'MoxieTracker/MoxieTracker_Options.lua'
+          unzip -l "$zip" | grep -q 'MoxieTracker/MoxieTracker_Commands.lua'
           unzip -l "$zip" | grep -q 'MoxieTracker/CHANGELOG.md'
+
+          # Dev-only tooling; .pkgmeta ignores it, and it should stay ignored.
+          # A bare `!` here would be exempt from set -e and silently not fail.
+          if unzip -l "$zip" | grep -q 'MoxieTracker/tests/'; then
+            echo "tests/ should not ship in the release archive (see .pkgmeta)" >&2
+            exit 1
+          fi
 
       # The packager writes to .release/, which is a hidden path. Since
       # upload-artifact v4.4 hidden files are excluded unless asked for, so

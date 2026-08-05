@@ -7,4 +7,8 @@
 ## Category: Professions
 ## SavedVariables: MoxieTrackerDB
 
-MoxieTracker.lua
+MoxieTracker_Config.lua
+MoxieTracker_Collect.lua
+MoxieTracker_UI.lua
+MoxieTracker_Options.lua
+MoxieTracker_Commands.lua
