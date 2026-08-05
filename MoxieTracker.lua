@@ -18,6 +18,18 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 --]]
 
+local ADDON_NAME = ...
+
+-- The TOC's @project-version@ placeholder is only substituted by the packager
+-- at release time, so an unpackaged dev copy still carries the literal token.
+local function GetVersion()
+    local version = C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version")
+    if not version or version == "" or version == "@project-version@" then
+        return "dev"
+    end
+    return version
+end
+
 -- Shown even at zero. A currency the character has not discovered is absent
 -- from the currency list entirely, so these must be queried by ID or they would
 -- silently have no row at all.
@@ -88,7 +100,10 @@ local ITEM_QUANTITY_COLOR = {
     end,
 }
 
-MoxieTrackerDB = MoxieTrackerDB or {}
+-- SavedVariables are only guaranteed populated once ADDON_LOADED fires for this
+-- addon; initializing here at file scope would create a throwaway table that
+-- the client's own load then silently discards. See the ADDON_LOADED handler
+-- below for the real initialization.
 
 -- Stable identity for a row, used as the key for the show/hide setting. IDs are
 -- preferred because names are localized; the name form only ever applies to an
@@ -137,8 +152,10 @@ frame:SetMovable(true)
 frame:SetClampedToScreen(true)
 
 local function GetOffset()
-    local x = MoxieTrackerDB.offsetX
-    local y = MoxieTrackerDB.offsetY
+    -- Called from the file-scope ApplyAnchor() below, which runs before
+    -- ADDON_LOADED has had a chance to initialize MoxieTrackerDB.
+    local x = MoxieTrackerDB and MoxieTrackerDB.offsetX
+    local y = MoxieTrackerDB and MoxieTrackerDB.offsetY
     if type(x) ~= "number" or type(y) ~= "number" then
         return DEFAULT_OFFSET_X, DEFAULT_OFFSET_Y
     end
@@ -259,6 +276,13 @@ end
 local MOXIE_ID_SET = {}
 for _, currencyID in ipairs(MOXIE_IDS) do
     MOXIE_ID_SET[currencyID] = true
+end
+
+-- GET_ITEM_INFO_RECEIVED fires for every item entering the client's cache, not
+-- just ones this addon tracks, so redraws must be filtered down to these IDs.
+local TRACKED_ITEM_ID_SET = {}
+for _, item in ipairs(TRACKED_ITEMS) do
+    TRACKED_ITEM_ID_SET[item.itemID] = true
 end
 
 local function GetQuantityColor(entry)
@@ -460,6 +484,7 @@ SafeRegisterEvent("PLAYER_LOGIN")
 SafeRegisterEvent("CURRENCY_TRANSFER_LOG_UPDATE")
 SafeRegisterEvent("TRADE_SKILL_SHOW")
 SafeRegisterEvent("TRADE_SKILL_CLOSE")
+SafeRegisterEvent("ADDON_LOADED")
 -- Item rows are counted from the bags, so they move on bag changes rather than
 -- on the currency events. GET_ITEM_INFO_RECEIVED redraws the row once the
 -- client has cached the item and its real name replaces the fallback.
@@ -473,11 +498,23 @@ for _, item in ipairs(TRACKED_ITEMS) do
     end
 end
 
-frame:SetScript("OnEvent", function(self, event)
-    if event == "TRADE_SKILL_SHOW" then
+frame:SetScript("OnEvent", function(self, event, arg1)
+    if event == "ADDON_LOADED" then
+        if arg1 == ADDON_NAME then
+            MoxieTrackerDB = MoxieTrackerDB or {}
+        end
+    elseif event == "PLAYER_LOGIN" then
+        if not MoxieTrackerDB.suppressLoginMessage then
+            print(string.format("|cff33ff99MoxieTracker|r %s loaded. Type /moxie for options.", GetVersion()))
+        end
+    elseif event == "TRADE_SKILL_SHOW" then
         SetCraftOpen(true)
     elseif event == "TRADE_SKILL_CLOSE" then
         SetCraftOpen(false)
+    elseif event == "GET_ITEM_INFO_RECEIVED" then
+        if TRACKED_ITEM_ID_SET[arg1] and self:IsShown() then
+            UpdateDisplay()
+        end
     elseif self:IsShown() then
         UpdateDisplay()
     end
@@ -513,7 +550,6 @@ if EventUtil and EventUtil.ContinueOnAddOnLoaded then
         HookCraftingFrame("ProfessionsFrame")
     end)
 else
-    SafeRegisterEvent("ADDON_LOADED")
     frame:HookScript("OnEvent", function(_, event, loadedAddon)
         if event == "ADDON_LOADED" and loadedAddon == "Blizzard_Professions" then
             HookCraftingFrame("ProfessionsFrame")
@@ -526,7 +562,8 @@ end
 -- only for professions the character has, and the keyword fallback can turn up
 -- a currency no ID table knows about.
 local OPTIONS_ROW_HEIGHT = 26
-local OPTIONS_FIRST_ROW_Y = -72
+local OPTIONS_LOGIN_ROW_Y = -72
+local OPTIONS_FIRST_ROW_Y = OPTIONS_LOGIN_ROW_Y - OPTIONS_ROW_HEIGHT
 
 local optionsPanel
 local optionsCategory
@@ -557,6 +594,8 @@ local function EnsureOptionRow(index)
 end
 
 local function RefreshOptions()
+    optionsPanel.loginCheckbox:SetChecked(not MoxieTrackerDB.suppressLoginMessage)
+
     local tracked = CollectTracked(true)
 
     for _, row in ipairs(optionsPanel.rows) do
@@ -585,13 +624,24 @@ local function CreateOptionsPanel()
 
     local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, -16)
-    title:SetText("MoxieTracker")
+    title:SetText("MoxieTracker " .. GetVersion())
 
     local subtitle = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
     subtitle:SetPoint("RIGHT", panel, "RIGHT", -16, 0)
     subtitle:SetJustifyH("LEFT")
     subtitle:SetText("Uncheck a row to hide it from the tracker. Choices apply to the whole account.")
+
+    local loginCheckbox = CreateFrame("CheckButton", "MoxieTrackerLoginMessageOption", panel, "UICheckButtonTemplate")
+    loginCheckbox:SetSize(24, 24)
+    loginCheckbox:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, OPTIONS_LOGIN_ROW_Y)
+    loginCheckbox.label = loginCheckbox:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    loginCheckbox.label:SetPoint("LEFT", loginCheckbox, "RIGHT", 4, 0)
+    loginCheckbox.label:SetText("Show version message at login")
+    loginCheckbox:SetScript("OnClick", function(self)
+        MoxieTrackerDB.suppressLoginMessage = not self:GetChecked()
+    end)
+    panel.loginCheckbox = loginCheckbox
 
     panel.empty = panel:CreateFontString(nil, "ARTWORK", "GameFontDisable")
     panel.empty:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, OPTIONS_FIRST_ROW_Y)
@@ -622,6 +672,9 @@ local function OpenOptions()
 end
 
 SLASH_MOXIETRACKER1 = "/moxie"
+-- /moxie is short enough to be contested by another addon; SlashCmdList
+-- registration is last-writer-wins, so this full-length fallback is never lost.
+SLASH_MOXIETRACKER2 = "/moxietracker"
 SlashCmdList["MOXIETRACKER"] = function(msg)
     msg = (msg or ""):lower():match("^%s*(.-)%s*$")
 

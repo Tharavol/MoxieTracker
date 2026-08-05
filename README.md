@@ -12,8 +12,11 @@ MoxieTracker is a World of Warcraft addon for Retail / Midnight that displays th
 - Colors each count against its own thresholds: Shard of Dundun is green at 6 and red at 7-8, Unalloyed Abundance is green at 800 or more, Moxie is green at 600 or more, Fused Vitality is green at 20 or more, yellow otherwise
 - Docks a compact, draggable panel to the top-right of the crafting window, shown only while that window is open
 - Displays the same tooltip information as the default currency UI when hovering over a line
+- Prints the addon version to chat at login (toggle from the options panel) and shows it in the options panel title
 
 ## Slash commands
+
+`/moxie` and `/moxietracker` are both recognized.
 
 - `/moxie options` - open the options panel and choose which rows are shown
 - `/moxie showall` - unhide every row

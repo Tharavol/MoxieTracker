@@ -12,6 +12,18 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Ubuntu's lua5.1 package ships both the lua5.1 interpreter and the
+      # luac5.1 compiler used below for the syntax check.
+      - name: Install Lua 5.1
+        run: sudo apt-get update && sudo apt-get install -y lua5.1
+
+      - name: Syntax check
+        run: luac5.1 -p *.lua
+
+      - name: Check TOC declares an interface version
+        run: |
+          grep -qE '^## Interface: [0-9]+$' MoxieTracker.toc
+
       - uses: leafo/gh-actions-lua@v13
         with:
           luaVersion: "5.1"
@@ -48,6 +60,7 @@ jobs:
           unzip -l "$zip"
           unzip -l "$zip" | grep -q 'MoxieTracker/MoxieTracker.toc'
           unzip -l "$zip" | grep -q 'MoxieTracker/MoxieTracker.lua'
+          unzip -l "$zip" | grep -q 'MoxieTracker/CHANGELOG.md'
 
       # The packager writes to .release/, which is a hidden path. Since
       # upload-artifact v4.4 hidden files are excluded unless asked for, so

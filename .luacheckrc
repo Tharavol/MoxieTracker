@@ -14,12 +14,14 @@ exclude_files = {".luarocks/**", ".luarocks", "lua_modules/**"}
 globals = {
     "MoxieTrackerDB",
     "SLASH_MOXIETRACKER1",
+    "SLASH_MOXIETRACKER2",
     "SlashCmdList",
 }
 
 -- WoW API surface used by this addon. Deliberately narrow: a typo in an API
 -- name should fail the check rather than be silently allowed by a broad list.
 read_globals = {
+    "C_AddOns",
     "C_CurrencyInfo",
     "C_Item",
     "CreateFrame",

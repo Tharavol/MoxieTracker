@@ -3,6 +3,8 @@
 ## Notes: Displays current character Artisan Moxie, Shard of Dundun, Unalloyed Abundance, and Fused Vitality in a movable window.
 ## Author: Tharavol
 ## Version: @project-version@
+## IconTexture: Interface\Icons\INV_Misc_Coin_02
+## Category: Professions
 ## SavedVariables: MoxieTrackerDB
 
 MoxieTracker.lua

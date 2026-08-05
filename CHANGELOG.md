@@ -5,6 +5,35 @@ All notable changes to MoxieTracker are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-08-05
+
+### Added
+
+- The addon version now prints to chat at login and shows in the options panel
+  title. A checkbox in the options panel turns the login message off.
+- `/moxietracker` is now recognized alongside `/moxie`. `SlashCmdList`
+  registration is last-writer-wins, so a shorter alias can be silently taken
+  over by another addon; the full-length command is a fallback that survives
+  that collision.
+- The TOC declares `IconTexture` and `Category` (`Professions`), so the addon
+  shows a real icon and groups correctly in the in-game AddOns list.
+
+### Fixed
+
+- `MoxieTrackerDB` is now initialized in an `ADDON_LOADED` handler gated on the
+  addon's own name, instead of at file scope before SavedVariables are
+  guaranteed to be loaded. Previously a placeholder table created too early
+  could be silently discarded when the client installed the real saved data.
+- `GET_ITEM_INFO_RECEIVED` now only triggers a redraw when the event's item ID
+  is one this addon tracks. It previously rebuilt the whole panel for every
+  item entering the client's item cache, which fires continuously while a
+  crafting window is open.
+- CI now actually runs the `luac5.1 -p` syntax check, a TOC interface-version
+  check, and a check that CHANGELOG.md is present in the packaged archive,
+  matching what the README and HANDOFF describe.
+- HANDOFF.md no longer claims `MoxieTrackerDB` is per-character; it has been
+  account-wide since v1.1.0.
+
 ## [1.2.0] - 2026-08-02
 
 ### Added
@@ -115,6 +144,7 @@ during load; that tag was removed and reused for this release.
 - The full GPL-3.0 text, replacing a truncated stub that named the license but
   omitted its terms.
 
+[1.3.0]: https://github.com/Tharavol/MoxieTracker/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/Tharavol/MoxieTracker/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/Tharavol/MoxieTracker/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/Tharavol/MoxieTracker/compare/v1.0.0...v1.1.0
