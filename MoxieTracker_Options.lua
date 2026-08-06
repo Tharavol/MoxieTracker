@@ -278,10 +278,16 @@ local function CreateOptionsPanel()
     scrollFrame:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, OPTIONS_FIRST_ROW_Y)
     scrollFrame:SetSize(OPTIONS_SCROLL_WIDTH, OPTIONS_SCROLL_HEIGHT)
 
+    -- No SetPoint calls here: a ScrollFrame manages its scroll child's
+    -- anchoring internally once SetScrollChild is called. Manually anchoring
+    -- the child first (as this used to) fights that internal positioning and
+    -- loses -- confirmed in-game via GetLeft()/GetTop() both reading nil on
+    -- the scroll child and everything anchored to it, despite each frame
+    -- otherwise reporting a normal size and Show/IsVisible state. An explicit
+    -- SetSize before SetScrollChild is the correct, sufficient way to give
+    -- the child a shape; the scroll frame positions it from there.
     local rowsContent = CreateFrame("Frame", nil, scrollFrame)
-    rowsContent:SetPoint("TOPLEFT")
-    rowsContent:SetPoint("TOPRIGHT")
-    rowsContent:SetHeight(1)
+    rowsContent:SetSize(OPTIONS_SCROLL_WIDTH, 1)
     scrollFrame:SetScrollChild(rowsContent)
     panel.scrollFrame = scrollFrame
     panel.rowsContent = rowsContent

@@ -39,18 +39,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   v1.4.0 added the test suite; dev-only tooling has no reason to reach an
   installed copy of the addon. CI now fails if it reappears.
 - The options panel's row-visibility list rendered nothing at all -- not even
-  the "Nothing to configure yet" message. The options panel is a canvas
-  settings category, and it turns out one is not guaranteed to be resized to
-  fill the available area: in-game, `MoxieTrackerOptionsPanel:GetWidth()`
-  read back as 0. Every other element on the panel tolerated this silently,
-  since plain FontStrings and CheckButtons are not clipped to their parent's
-  bounds -- but a ScrollFrame clips to its own rect by definition, so the
-  row list was the one place the underlying panel-sizing issue was actually
-  visible. Fixed by giving the scroll frame an explicit size on both axes
-  instead of anchoring it to the panel's edges, plus a
-  `scrollFrame:UpdateScrollChildRect()` call after resizing its scroll child
-  each refresh, since a ScrollFrame does not reliably recompute its scroll
-  range on its own when that happens.
+  the "Nothing to configure yet" message. Two compounding causes, both found
+  by dumping frame state in-game rather than guessing from screenshots:
+  the options panel is a canvas settings category, and one is not guaranteed
+  to be resized to fill the available area (`MoxieTrackerOptionsPanel:GetWidth()`
+  read back as 0, so the scroll frame's size -- previously anchored to the
+  panel's edges -- resolved to zero on one axis at a time as each was fixed);
+  and the scroll child was being manually anchored with `SetPoint` before
+  `SetScrollChild`, which fights a ScrollFrame's internal child positioning
+  and loses, leaving the child (and every row anchored to it) with no
+  resolved screen position at all despite reporting a normal size and a true
+  Show/IsVisible state. Fixed by giving the scroll frame an explicit size on
+  both axes instead of anchoring it to the panel, giving the scroll child a
+  size with no `SetPoint` calls of its own, and calling
+  `scrollFrame:UpdateScrollChildRect()` after resizing the child each
+  refresh, since a ScrollFrame does not reliably recompute its scroll range
+  on its own when that happens.
 
 ### Removed
 
