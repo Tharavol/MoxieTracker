@@ -39,19 +39,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   v1.4.0 added the test suite; dev-only tooling has no reason to reach an
   installed copy of the addon. CI now fails if it reappears.
 - The options panel's row-visibility list rendered nothing at all -- not even
-  the "Nothing to configure yet" message -- because its scroll frame's height
-  was anchored to the options panel's bottom edge, and a canvas settings
-  category is not guaranteed to stretch the frame it is given to fill the
-  available space. An unresolved anchor against an unsized panel produces a
-  silent zero-height scroll frame rather than an error. The scroll frame now
-  uses an explicit fixed height instead.
-- Even with the fixed height above, the row list still rendered nothing:
-  in-game testing showed the scrollbar itself appearing (proving the frame's
-  geometry was now fine) while the rows stayed invisible despite the
-  character having tracked currencies. A ScrollFrame does not reliably
-  recompute its scroll range when its scroll child is resized after
-  creation; `RefreshOptions` now calls `UpdateScrollChildRect()` (and resets
-  scroll position to 0) after resizing it.
+  the "Nothing to configure yet" message. The options panel is a canvas
+  settings category, and it turns out one is not guaranteed to be resized to
+  fill the available area: in-game, `MoxieTrackerOptionsPanel:GetWidth()`
+  read back as 0. Every other element on the panel tolerated this silently,
+  since plain FontStrings and CheckButtons are not clipped to their parent's
+  bounds -- but a ScrollFrame clips to its own rect by definition, so the
+  row list was the one place the underlying panel-sizing issue was actually
+  visible. Fixed by giving the scroll frame an explicit size on both axes
+  instead of anchoring it to the panel's edges, plus a
+  `scrollFrame:UpdateScrollChildRect()` call after resizing its scroll child
+  each refresh, since a ScrollFrame does not reliably recompute its scroll
+  range on its own when that happens.
 
 ### Removed
 

@@ -262,17 +262,21 @@ local function CreateOptionsPanel()
     -- layout could guarantee fits. UIPanelScrollFrameTemplate brings its own
     -- scrollbar, so there is no custom scroll code to maintain.
     --
-    -- Height is explicit rather than anchored to the panel's bottom edge:
-    -- canvas settings categories are not guaranteed to stretch the frame we
-    -- register to fill the available area, and an unresolved BOTTOMRIGHT
-    -- anchor against an unsized panel silently produces a zero-height (and
-    -- so invisible) scroll frame rather than an error.
+    -- Both dimensions are explicit rather than anchored to the options
+    -- panel's edges: a canvas settings category is not guaranteed to stretch
+    -- the frame it is given to fill the available area, and panel:GetWidth()
+    -- confirmed 0 in-game -- an unresolved anchor against an unsized panel
+    -- silently produces a zero-size (and so invisible, since a ScrollFrame
+    -- actually clips to its own bounds, unlike a plain Frame) scroll frame
+    -- rather than an error. Other elements on this panel look unaffected by
+    -- the same underlying panel-sizing issue only because plain FontStrings
+    -- and CheckButtons are not clipped to their parent's bounds.
+    local OPTIONS_SCROLL_WIDTH = 500
     local OPTIONS_SCROLL_HEIGHT = 260
     local scrollFrame = CreateFrame("ScrollFrame", "MoxieTrackerOptionsScrollFrame", panel,
         "UIPanelScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, OPTIONS_FIRST_ROW_Y)
-    scrollFrame:SetPoint("RIGHT", panel, "RIGHT", -32, 0)
-    scrollFrame:SetHeight(OPTIONS_SCROLL_HEIGHT)
+    scrollFrame:SetSize(OPTIONS_SCROLL_WIDTH, OPTIONS_SCROLL_HEIGHT)
 
     local rowsContent = CreateFrame("Frame", nil, scrollFrame)
     rowsContent:SetPoint("TOPLEFT")
