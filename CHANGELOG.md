@@ -45,6 +45,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   available space. An unresolved anchor against an unsized panel produces a
   silent zero-height scroll frame rather than an error. The scroll frame now
   uses an explicit fixed height instead.
+- Even with the fixed height above, the row list still rendered nothing:
+  in-game testing showed the scrollbar itself appearing (proving the frame's
+  geometry was now fine) while the rows stayed invisible despite the
+  character having tracked currencies. A ScrollFrame does not reliably
+  recompute its scroll range when its scroll child is resized after
+  creation; `RefreshOptions` now calls `UpdateScrollChildRect()` (and resets
+  scroll position to 0) after resizing it.
 
 ### Removed
 

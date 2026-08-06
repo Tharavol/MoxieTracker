@@ -102,6 +102,13 @@ function ns.RefreshOptions()
     -- some client versions treat as "not scrollable" even once rows appear.
     ns.optionsPanel.rowsContent:SetHeight(math.max(1, #tracked * OPTIONS_ROW_HEIGHT))
 
+    -- A ScrollFrame does not reliably recompute its scroll range on its own
+    -- when its scroll child is resized after creation; without this, rows
+    -- added after the initial (1px) scroll child height can end up outside
+    -- the range the scroll frame thinks is scrollable and never draw.
+    ns.optionsPanel.scrollFrame:UpdateScrollChildRect()
+    ns.optionsPanel.scrollFrame:SetVerticalScroll(0)
+
     if #tracked == 0 then
         ns.optionsPanel.empty:Show()
     else
@@ -272,6 +279,7 @@ local function CreateOptionsPanel()
     rowsContent:SetPoint("TOPRIGHT")
     rowsContent:SetHeight(1)
     scrollFrame:SetScrollChild(rowsContent)
+    panel.scrollFrame = scrollFrame
     panel.rowsContent = rowsContent
 
     panel.empty = rowsContent:CreateFontString(nil, "ARTWORK", "GameFontDisable")
