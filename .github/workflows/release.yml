@@ -20,3 +20,26 @@ jobs:
         uses: BigWigsMods/packager@v2
         env:
           GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
+
+      # CI's dry-run build verifies layout too, but it skips itself on this
+      # exact commit (see ci.yml) since packager won't double-build a tagged
+      # commit. This is the only place the archive that actually ships gets
+      # checked.
+      - name: Verify archive layout
+        run: |
+          zip=$(ls .release/*.zip)
+          unzip -l "$zip"
+          unzip -l "$zip" | grep -q 'MoxieTracker/MoxieTracker.toc'
+          unzip -l "$zip" | grep -q 'MoxieTracker/MoxieTracker_Config.lua'
+          unzip -l "$zip" | grep -q 'MoxieTracker/MoxieTracker_Collect.lua'
+          unzip -l "$zip" | grep -q 'MoxieTracker/MoxieTracker_UI.lua'
+          unzip -l "$zip" | grep -q 'MoxieTracker/MoxieTracker_Options.lua'
+          unzip -l "$zip" | grep -q 'MoxieTracker/MoxieTracker_Commands.lua'
+          unzip -l "$zip" | grep -q 'MoxieTracker/CHANGELOG.md'
+
+          # Dev-only tooling; .pkgmeta ignores it, and it should stay ignored.
+          # A bare `!` here would be exempt from set -e and silently not fail.
+          if unzip -l "$zip" | grep -q 'MoxieTracker/tests/'; then
+            echo "tests/ should not ship in the release archive (see .pkgmeta)" >&2
+            exit 1
+          fi

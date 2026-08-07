@@ -47,10 +47,20 @@ jobs:
         with:
           fetch-depth: 0
 
+      # If this push also carries a tag on HEAD (e.g. a release commit pushed
+      # together with its tag), BigWigsMods/packager intentionally no-ops on
+      # the branch push to avoid a duplicate build, leaving no zip behind.
+      # Detect that ourselves so the later steps skip deterministically
+      # instead of racing the tag ref and failing when they lose.
+      - name: Check for pending tag
+        id: check_tag
+        run: echo "tag=$(git tag --points-at HEAD)" >> "$GITHUB_OUTPUT"
+
       # -d skips uploading, so this builds the real release zip on every push
       # without publishing it. Packaging breakage surfaces here rather than at
       # tag time.
       - name: Build package
+        if: steps.check_tag.outputs.tag == ''
         uses: BigWigsMods/packager@v2
         with:
           args: -d
@@ -58,6 +68,7 @@ jobs:
           GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Verify archive layout
+        if: steps.check_tag.outputs.tag == ''
         run: |
           zip=$(ls .release/*.zip)
           unzip -l "$zip"
@@ -81,6 +92,7 @@ jobs:
       # this step uploaded nothing and only logged a warning. if-no-files-found
       # promotes a future miss to a failure rather than another quiet warning.
       - name: Upload artifact
+        if: steps.check_tag.outputs.tag == ''
         uses: actions/upload-artifact@v7
         with:
           name: moxietracker-package
