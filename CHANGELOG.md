@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `/moxie debug`. Offsets are now rounded to the nearest whole pixel when
   a drag ends.
 
+### Changed
+
+- MoxieTracker_UI.lua's panel-height numbers (the placeholder height before
+  first draw, the first row's top offset, and the empty/all-hidden state's
+  height) are now named constants instead of inline literals, matching the
+  convention MoxieTracker_Options.lua already uses for its own layout. No
+  behavior change.
+
 ## [1.5.0] - 2026-08-06
 
 ### Added

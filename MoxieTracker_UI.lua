@@ -6,9 +6,13 @@ local ADDON_NAME, ns = ...
 local MIN_WIDTH = 240
 local PADDING = 8
 local LINE_HEIGHT = 14
+local FIRST_LINE_Y = 24 -- top offset of the first currency/item row, below the title
+local BASE_HEIGHT = 40 -- header + padding above the rows, before LINE_HEIGHT * row count
+local EMPTY_HEIGHT = 56 -- height while showing the single "nothing tracked" fallback line
+local DEFAULT_HEIGHT = 70 -- placeholder until the first UpdateDisplay call resizes the frame
 
 local frame = CreateFrame("Frame", "MoxieTrackerFrame", UIParent, "BackdropTemplate")
-frame:SetSize(MIN_WIDTH, 70)
+frame:SetSize(MIN_WIDTH, DEFAULT_HEIGHT)
 frame:EnableMouse(true)
 frame:RegisterForDrag("LeftButton")
 frame:SetMovable(true)
@@ -89,7 +93,7 @@ local function EnsureLine(index)
     local line = frame.lines[index]
     if not line then
         line = CreateFrame("Frame", nil, frame)
-        line:SetPoint("TOPLEFT", frame, "TOPLEFT", PADDING, -(24 + ((index - 1) * LINE_HEIGHT)))
+        line:SetPoint("TOPLEFT", frame, "TOPLEFT", PADDING, -(FIRST_LINE_Y + ((index - 1) * LINE_HEIGHT)))
         line:SetPoint("RIGHT", frame, "RIGHT", -PADDING, 0)
         line:SetHeight(LINE_HEIGHT)
         line:EnableMouse(true)
@@ -141,7 +145,7 @@ function ns.UpdateDisplay()
         local everythingHidden = MoxieTrackerDB.hidden ~= nil and next(MoxieTrackerDB.hidden) ~= nil
         fallback.text:SetText(everythingHidden and "All rows hidden - /moxie options" or "No tracked currencies")
         fallback:Show()
-        frame:SetSize(MIN_WIDTH, 56)
+        frame:SetSize(MIN_WIDTH, EMPTY_HEIGHT)
         return
     end
 
@@ -159,7 +163,7 @@ function ns.UpdateDisplay()
     end
 
     frame:SetWidth(math.max(MIN_WIDTH, math.ceil(widest) + (PADDING * 2)))
-    frame:SetHeight(math.max(56, 40 + (#tracked * LINE_HEIGHT)))
+    frame:SetHeight(math.max(EMPTY_HEIGHT, BASE_HEIGHT + (#tracked * LINE_HEIGHT)))
 end
 
 frame:SetScript("OnEnter", function(self)
