@@ -31,6 +31,15 @@ function ns.ApplyAnchor()
     end
 end
 
+-- The scale division in SaveOffsetFromAnchor below is exact only when
+-- frameScale and anchorScale match, and otherwise leaves a trailing remainder
+-- like 3.9999999999994 that would show up verbatim in the options panel's
+-- offset fields and /moxie debug. A local helper rather than the WoW global
+-- Round(), so this stays a plain math operation the same in-game and in tests.
+local function RoundToPixel(value)
+    return math.floor(value + 0.5)
+end
+
 -- After a free drag the frame is anchored to wherever it was dropped, so
 -- convert that screen position back into an offset from the crafting window.
 local function SaveOffsetFromAnchor()
@@ -46,8 +55,8 @@ local function SaveOffsetFromAnchor()
         return
     end
 
-    MoxieTrackerDB.offsetX = ((left * frameScale) - (anchorRight * anchorScale)) / frameScale
-    MoxieTrackerDB.offsetY = ((top * frameScale) - (anchorTop * anchorScale)) / frameScale
+    MoxieTrackerDB.offsetX = RoundToPixel(((left * frameScale) - (anchorRight * anchorScale)) / frameScale)
+    MoxieTrackerDB.offsetY = RoundToPixel(((top * frameScale) - (anchorTop * anchorScale)) / frameScale)
 end
 
 frame:SetScript("OnDragStart", function(self)

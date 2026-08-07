@@ -5,6 +5,17 @@ All notable changes to MoxieTracker are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Dragging the panel could persist a floating-point offset such as
+  `3.9999999999994` (the scale-conversion math in `SaveOffsetFromAnchor` is
+  only exact when the panel and the crafting window share the same effective
+  scale), which then showed up verbatim in the options panel's offset fields
+  and `/moxie debug`. Offsets are now rounded to the nearest whole pixel when
+  a drag ends.
+
 ## [1.5.0] - 2026-08-06
 
 ### Added
