@@ -37,7 +37,7 @@ Release history is in [CHANGELOG.md](CHANGELOG.md).
 ## Development and CI
 
 - GitHub Actions validates the addon on pushes and pull requests: `luac5.1 -p` for syntax, a headless test suite (`tests/run.lua`) for the pure collection logic, luacheck for undefined globals, and a check that the TOC declares an interface version.
-- A release artifact is packaged automatically on pushes to main or master.
+- A release artifact is packaged automatically on pushes to main.
 - Tagging a release with a version like v1.0.0 creates a GitHub Release with the packaged addon zip.
 
 ## Credits
