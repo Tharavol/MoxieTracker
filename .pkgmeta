@@ -12,3 +12,4 @@ ignore:
   - .luacheckrc
   - tests
   - CHANGELOG.md
+  - TODO.md
