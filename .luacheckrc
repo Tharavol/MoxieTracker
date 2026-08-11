@@ -27,8 +27,10 @@ read_globals = {
     "CreateFrame",
     "EventUtil",
     "GameTooltip",
+    "GetRealmName",
     "Settings",
     "UIParent",
+    "UnitName",
 }
 
 -- The offline test harness temporarily reassigns print() to capture slash

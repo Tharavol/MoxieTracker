@@ -136,40 +136,53 @@ function ns.UpdateDisplay()
         frame.lines[index]:Hide()
     end
 
-    if #tracked == 0 then
-        local fallback = EnsureLine(1)
-        fallback.currencyID = nil
-        fallback.itemID = nil
-        -- Distinguish "nothing to show" from "you hid everything", which would
-        -- otherwise look identical to the addon having broken.
-        local everythingHidden = MoxieTrackerDB.hidden ~= nil and next(MoxieTrackerDB.hidden) ~= nil
-        fallback.text:SetText(everythingHidden and "All rows hidden - /moxie options" or "No tracked currencies")
-        fallback:Show()
-        frame:SetSize(MIN_WIDTH, EMPTY_HEIGHT)
-        return
-    end
-
     -- Width is driven by the widest rendered row so long names such as
     -- "Artisan Leatherworker's Moxie" are not clipped. Colour escapes do not
     -- contribute to GetStringWidth, so this measures the visible text.
     local widest = 0
-    for index, entry in ipairs(tracked) do
-        local line = EnsureLine(index)
-        line.currencyID = entry.currencyID
-        line.itemID = entry.itemID
-        line.text:SetText(string.format("%s: %s%d|r", entry.name, ns.GetQuantityColor(entry), entry.quantity))
+    local lineIndex = 0
+
+    local function RenderLine(text, currencyID, itemID)
+        lineIndex = lineIndex + 1
+        local line = EnsureLine(lineIndex)
+        line.currencyID = currencyID
+        line.itemID = itemID
+        line.text:SetText(text)
         line:Show()
         widest = math.max(widest, line.text:GetStringWidth())
     end
 
+    if #tracked == 0 then
+        -- Distinguish "nothing to show" from "you hid everything", which would
+        -- otherwise look identical to the addon having broken.
+        local everythingHidden = MoxieTrackerDB.hidden ~= nil and next(MoxieTrackerDB.hidden) ~= nil
+        RenderLine(everythingHidden and "All rows hidden - /moxie options" or "No tracked currencies")
+    else
+        for _, entry in ipairs(tracked) do
+            RenderLine(string.format("%s: %s%d|r", entry.name, ns.GetQuantityColor(entry), entry.quantity),
+                entry.currencyID, entry.itemID)
+        end
+    end
+
+    -- Knowledge Points roster (#38): always at least the current character,
+    -- growing as more alts log in. A plain-text header, matching how row
+    -- names elsewhere carry no colour code of their own.
+    local roster = ns.CollectKnowledgeRoster()
+    RenderLine("Knowledge Points")
+    for _, entry in ipairs(roster) do
+        RenderLine(string.format("%s%s|r: %d", ns.GREEN, entry.name, entry.points))
+    end
+
     frame:SetWidth(math.max(MIN_WIDTH, math.ceil(widest) + (PADDING * 2)))
-    frame:SetHeight(math.max(EMPTY_HEIGHT, BASE_HEIGHT + (#tracked * LINE_HEIGHT)))
+    frame:SetHeight(math.max(EMPTY_HEIGHT, BASE_HEIGHT + (lineIndex * LINE_HEIGHT)))
 end
 
 frame:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_TOPRIGHT")
-    GameTooltip:SetText("Artisan Moxie, Shard of Dundun, Unalloyed Abundance, Fused Vitality")
-    GameTooltip:AddLine("Shows the current character's tracked amounts. /moxie options to choose rows.",
+    GameTooltip:SetText("Artisan Moxie, Shard of Dundun, Unalloyed Abundance, Fused Vitality, Knowledge Points")
+    GameTooltip:AddLine(
+        "Shows the current character's tracked amounts, plus unspent Knowledge for every character " ..
+            "that has logged in. /moxie options to choose rows.",
         0.7, 0.7, 0.7, true)
     GameTooltip:Show()
 end)
@@ -240,6 +253,13 @@ frame:SetScript("OnEvent", function(self, event, arg1)
     elseif event == "PLAYER_LOGIN" then
         if not MoxieTrackerDB.suppressLoginMessage then
             ns.Print("%s loaded. Type /moxie for options.", ns.GetVersion())
+        end
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        -- The whole "accumulation" mechanism (#38): each login snapshots this
+        -- character's unspent Knowledge into the account-wide roster.
+        ns.SnapshotKnowledge()
+        if self:IsShown() then
+            ns.UpdateDisplay()
         end
     elseif event == "TRADE_SKILL_SHOW" then
         SetCraftOpen(true)

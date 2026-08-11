@@ -282,6 +282,75 @@ do
     check("showall still works", firstLineHas("every row is visible again"))
 end
 
+--------------------------------------------------------------------------
+-- 6. Knowledge points roster (#38).
+--------------------------------------------------------------------------
+do
+    fixtures.reset()
+    fixtures.setCharacter("Alaria", "Stormrage")
+
+    -- Only three of the eleven professions have any unspent Knowledge; the
+    -- other eight report no currency info at all, matching a character who
+    -- hasn't touched those professions.
+    fixtures.setCurrency(3150, "Alchemy Knowledge", 3) -- Alchemy
+    fixtures.setCurrency(3158, "Mining Knowledge", 5)  -- Mining
+    fixtures.setCurrency(3160, "Tailoring Knowledge", 2) -- Tailoring
+
+    assertEqual("unspent knowledge sums across every tracked profession",
+        ns.CollectUnspentKnowledge(), 10)
+end
+
+do
+    fixtures.reset()
+    fixtures.setCharacter("Alaria", "Stormrage")
+    fixtures.setCurrency(3150, "Alchemy Knowledge", 7)
+
+    local key, name = ns.GetCharacterKey()
+    assertEqual("character key includes the realm", key, "Alaria-Stormrage")
+    assertEqual("character key also returns the bare name", name, "Alaria")
+
+    ns.SnapshotKnowledge()
+    assertEqual("snapshot records the current character under its key",
+        MoxieTrackerDB.knowledge[key].points, 7)
+    assertEqual("snapshot records the display name", MoxieTrackerDB.knowledge[key].name, "Alaria")
+end
+
+do
+    fixtures.reset()
+
+    -- A different character's login already snapshotted some points.
+    MoxieTrackerDB.knowledge = {
+        ["Borin-Stormrage"] = { name = "Borin", points = 12 },
+    }
+
+    fixtures.setCharacter("Alaria", "Stormrage")
+    fixtures.setCurrency(3150, "Alchemy Knowledge", 4)
+
+    local roster = ns.CollectKnowledgeRoster()
+    assertEqual("roster includes both the current and a previously-seen character", #roster, 2)
+    assertEqual("roster is sorted by name", roster[1].name, "Alaria")
+    assertEqual("the current character's entry is always present", roster[1].points, 4)
+    assertEqual("a saved character's entry carries over", roster[2].name, "Borin")
+    assertEqual("a saved character's points come from storage, not live currency", roster[2].points, 12)
+end
+
+do
+    fixtures.reset()
+    fixtures.setCharacter("Alaria", "Stormrage")
+
+    -- The current character's own saved snapshot is stale (5); live currency
+    -- has since changed (9). The roster must report the live value, not the
+    -- stale one -- the whole point of not waiting for the next login.
+    MoxieTrackerDB.knowledge = {
+        ["Alaria-Stormrage"] = { name = "Alaria", points = 5 },
+    }
+    fixtures.setCurrency(3150, "Alchemy Knowledge", 9)
+
+    local roster = ns.CollectKnowledgeRoster()
+    assertEqual("the current character's roster entry is live, not the stale snapshot",
+        roster[1].points, 9)
+end
+
 print(string.format("%d checks, %d failure(s)", count, failures))
 if failures > 0 then
     os.exit(1)

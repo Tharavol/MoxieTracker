@@ -43,6 +43,15 @@ function ns.GetVersion()
     return version
 end
 
+-- Identifies the current character for the account-wide knowledge roster
+-- (#38). Name alone collides across realms, so the key includes realm;
+-- the name is returned separately since it's what actually gets displayed.
+function ns.GetCharacterKey()
+    local name = UnitName("player")
+    local realm = GetRealmName()
+    return name .. "-" .. realm, name
+end
+
 -- Shown even at zero. A currency the character has not discovered is absent
 -- from the currency list entirely, so these must be queried by ID or they would
 -- silently have no row at all.
@@ -65,6 +74,24 @@ ns.MOXIE_IDS = {
     3264, -- Artisan Miner's Moxie
     3265, -- Artisan Skinner's Moxie
     3266, -- Artisan Tailor's Moxie
+}
+
+-- One currency per profession, all eleven accounted for: each profession's
+-- unspent Midnight Knowledge, confirmed in-game (#38). Summed by
+-- ns.CollectUnspentKnowledge rather than shown per-profession, matching the
+-- issue's ask for one number per character.
+ns.KNOWLEDGE_IDS = {
+    3150, -- Alchemy
+    3151, -- Blacksmithing
+    3152, -- Enchanting
+    3153, -- Engineering
+    3154, -- Herbalism
+    3155, -- Inscription
+    3156, -- Jewelcrafting
+    3157, -- Leatherworking
+    3158, -- Mining
+    3159, -- Skinning
+    3160, -- Tailoring
 }
 
 -- Bag items, not currencies: these come from C_Item rather than C_CurrencyInfo

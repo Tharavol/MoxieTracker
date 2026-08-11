@@ -98,6 +98,10 @@ function M.install()
     _G.GameTooltip = StubObject()
     _G.UIParent = StubObject()
 
+    local characterName, realmName = "TestChar", "TestRealm"
+    _G.UnitName = function() return characterName end
+    _G.GetRealmName = function() return realmName end
+
     local fixtures
     fixtures = {
         setCurrency = function(id, name, quantity)
@@ -110,12 +114,17 @@ function M.install()
         setCurrencyList = function(list)
             currencyList = list
         end,
+        setCharacter = function(name, realm)
+            characterName = name
+            realmName = realm
+        end,
         -- Between test scenarios: clears every fixture and starts MoxieTrackerDB
         -- fresh, so one test's hidden rows or currencies cannot leak into the next.
         reset = function()
             currencies = {}
             currencyList = {}
             items = {}
+            characterName, realmName = "TestChar", "TestRealm"
             _G.MoxieTrackerDB = {}
         end,
     }

@@ -5,6 +5,11 @@ All notable changes to MoxieTracker are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2026-08-11
+
+### Added
+- Tracks unspent profession Knowledge (summed across all eleven professions) for every character that has logged in, listed beneath the currencies with each character's name in green (#38). The roster grows automatically as you log into each character -- no rescan is needed or possible, since the addon can only see whichever character is currently logged in. The current character's total is always live rather than the last-login snapshot
+
 ## [1.6.0] - 2026-08-11
 
 Adopts the cross-addon slash command standard (#37).

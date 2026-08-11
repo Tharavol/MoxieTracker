@@ -13,6 +13,7 @@ MoxieTracker is a World of Warcraft addon for Retail / Midnight that displays th
 - Docks a compact, draggable panel to the top-right of the crafting window, shown only while that window is open
 - Displays the same tooltip information as the default currency UI when hovering over a line
 - Prints the addon version to chat at login (toggle from the options panel) and shows it in the options panel title
+- Tracks unspent profession Knowledge (summed across all eleven professions) for every character that has logged in, listed beneath the currencies with each character's name in green. Builds up automatically as you log into each character; the current character's total is always live
 
 ## Slash commands
 

@@ -139,3 +139,55 @@ function ns.CollectTracked(includeHidden)
 
     return tracked
 end
+
+--------------------------------------------------------------------------------
+-- Knowledge points roster (#38)
+--------------------------------------------------------------------------------
+
+-- Sums unspent Midnight Knowledge across all eleven professions. A
+-- profession the character doesn't have simply reports no currency info, so
+-- this doesn't need to know which professions actually exist for them.
+function ns.CollectUnspentKnowledge()
+    local total = 0
+    for _, currencyID in ipairs(ns.KNOWLEDGE_IDS) do
+        local info = C_CurrencyInfo.GetCurrencyInfo(currencyID)
+        if info then
+            total = total + (info.quantity or 0)
+        end
+    end
+    return total
+end
+
+-- Persists the current character's unspent Knowledge into the account-wide
+-- roster, so it stays visible while playing a different character. Called
+-- on login; there is no scan of other characters, because the client cannot
+-- see their state -- the roster grows one entry at a time as each alt logs
+-- in, which is the whole "accumulation" mechanism the issue asks for.
+function ns.SnapshotKnowledge()
+    local key, name = ns.GetCharacterKey()
+    MoxieTrackerDB.knowledge = MoxieTrackerDB.knowledge or {}
+    MoxieTrackerDB.knowledge[key] = { name = name, points = ns.CollectUnspentKnowledge() }
+end
+
+-- Returns the saved roster as a name-sorted array. The current character's
+-- entry is always present and always live (not the last login snapshot), so
+-- spending or earning points mid-session doesn't look stale until the next
+-- login; every other character reflects whatever their last login saw.
+function ns.CollectKnowledgeRoster()
+    local currentKey, currentName = ns.GetCharacterKey()
+    local roster = { { name = currentName, points = ns.CollectUnspentKnowledge() } }
+    local seen = { [currentKey] = true }
+
+    for key, entry in pairs(MoxieTrackerDB.knowledge or {}) do
+        if not seen[key] then
+            table.insert(roster, { name = entry.name, points = entry.points })
+            seen[key] = true
+        end
+    end
+
+    table.sort(roster, function(a, b)
+        return a.name < b.name
+    end)
+
+    return roster
+end
