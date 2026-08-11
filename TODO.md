@@ -19,13 +19,32 @@ Points are exposed the same way Moxie already is: as ordinary currencies via
 unspent-points getter exists. That's good news: it's the exact same API
 shape `MOXIE_IDS` already uses, not a new integration pattern.
 
-What could **not** be pinned down from outside the client: the actual
-currency ID(s). Knowledge currencies appear to be per-profession (e.g.
-"Weekly Mining Knowledge" is currency 3065), and there may be multiple
-knowledge currencies per profession (base + weekly + catch-up, per how the
-established addon "Myu's Knowledge Points Tracker" categorizes them) rather
-than one. **This has to be confirmed in-game** -- first real task, not a
-guess to bake into the implementation.
+**Confirmed in-game (2026-08-11):** one currency per profession, all eleven
+accounted for -- same shape as `ns.MOXIE_IDS`, just a different ID per entry:
+
+```lua
+-- ns.KNOWLEDGE_IDS, one currency ID per profession's unspent Midnight
+-- Knowledge, mirroring ns.MOXIE_IDS in MoxieTracker_Config.lua.
+ns.KNOWLEDGE_IDS = {
+    3150, -- Alchemy
+    3151, -- Blacksmithing
+    3152, -- Enchanting
+    3153, -- Engineering
+    3154, -- Herbalism
+    3155, -- Inscription
+    3156, -- Jewelcrafting
+    3157, -- Leatherworking
+    3158, -- Mining
+    3159, -- Skinning
+    3160, -- Tailoring
+}
+```
+
+No separate weekly/catch-up currency showed up alongside these, so the
+"multiple knowledge currencies per profession" concern below turned out not
+to apply here -- one ID per profession is the whole picture for *unspent*
+points specifically (Myu's weekly/catch-up tracking is about progress
+toward *earning* more, a different feature this issue doesn't ask for).
 
 ## The real design question: multi-character storage
 
@@ -43,11 +62,8 @@ you're playing character B. Two things make this easier than it sounds:
 
 ## Proposed plan
 
-1. **Confirm the currency ID(s) in-game.** Log a character into their
-   profession window, `/dump C_CurrencyInfo.GetCurrencyInfo(<id>)` against
-   candidate IDs (or read them off the currency tab), and determine: one ID
-   per profession, or a shared "unspent" total? This determines everything
-   below, so it's a blocking first step, not parallelizable with the rest.
+1. ~~Confirm the currency ID(s) in-game.~~ **Done** -- see `ns.KNOWLEDGE_IDS`
+   above.
 
 2. **Data model** -- add `MoxieTrackerDB.knowledge`, keyed by
    `"CharacterName-RealmName"` (matching the pattern `UnitName("player")`
@@ -100,13 +116,11 @@ you're playing character B. Two things make this easier than it sounds:
 
 ## Suggested order
 
-Step 1 (confirm the API) blocks everything else and should happen before
-any code is written -- treat it as its own quick spike, in-game, before
-anything else here is scheduled. Once that's back, steps 2-4 are a single
-focused PR (data model + collection + rendering), and 5-7 (options
-integration, edge-case handling, tests) are natural follow-up polish,
-similar in spirit to how MoxieTracker's own milestones have sequenced "make
-it work" before "make it configurable."
+Step 1 is done, so the blocker is clear. Steps 2-4 are a single focused PR
+(data model + collection + rendering), and 5-7 (options integration,
+edge-case handling, tests) are natural follow-up polish, similar in spirit
+to how MoxieTracker's own milestones have sequenced "make it work" before
+"make it configurable."
 
 ## Sources
 
