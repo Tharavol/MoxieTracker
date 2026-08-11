@@ -42,9 +42,12 @@ jobs:
           unzip -l "$zip" | grep -q 'MoxieTracker/MoxieTracker_UI.lua'
           unzip -l "$zip" | grep -q 'MoxieTracker/MoxieTracker_Options.lua'
           unzip -l "$zip" | grep -q 'MoxieTracker/MoxieTracker_Commands.lua'
-          unzip -l "$zip" | grep -q 'MoxieTracker/CHANGELOG.md'
 
           if unzip -l "$zip" | grep -q 'MoxieTracker/tests/'; then
             echo "tests/ should not ship in the release archive (see .pkgmeta)" >&2
+            exit 1
+          fi
+          if unzip -l "$zip" | grep -q 'MoxieTracker/CHANGELOG.md'; then
+            echo "CHANGELOG.md should not ship in the release archive (see .pkgmeta)" >&2
             exit 1
           fi

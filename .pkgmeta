@@ -11,3 +11,4 @@ ignore:
   - .github
   - .luacheckrc
   - tests
+  - CHANGELOG.md
