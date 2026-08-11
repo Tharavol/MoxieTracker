@@ -30,3 +30,9 @@ read_globals = {
     "Settings",
     "UIParent",
 }
+
+-- The offline test harness temporarily reassigns print() to capture slash
+-- command output, and installs its own WoW stubs into _G on purpose.
+files["tests/**"] = {
+    ignore = {"121", "122"},
+}

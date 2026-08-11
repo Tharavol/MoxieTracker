@@ -24,6 +24,15 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 -- SavedVariables accessors -- nothing here touches a frame.
 local ADDON_NAME, ns = ...
 
+-- Every command-output call site routes through this instead of hand-writing
+-- its own copy of the colour code, so the addon has exactly one place that
+-- owns the prefix.
+local PREFIX = "|cff33ff99MoxieTracker|r: "
+function ns.Print(fmt, ...)
+    local msg = select("#", ...) > 0 and fmt:format(...) or fmt
+    print(PREFIX .. msg)
+end
+
 -- The TOC's @project-version@ placeholder is only substituted by the packager
 -- at release time, so an unpackaged dev copy still carries the literal token.
 function ns.GetVersion()

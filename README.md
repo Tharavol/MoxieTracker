@@ -16,13 +16,17 @@ MoxieTracker is a World of Warcraft addon for Retail / Midnight that displays th
 
 ## Slash commands
 
-`/moxie` and `/moxietracker` are both recognized.
+`/moxie` and `/moxietracker` are both recognized. `/moxie` on its own (also `options`, `config`, `gui`) opens the options panel and chooses which rows are shown.
 
-- `/moxie options` - open the options panel and choose which rows are shown
 - `/moxie showall` - unhide every row
 - `/moxie pin` - keep the panel visible even with no profession open
-- `/moxie debug` - print the anchor state, every tracked currency and item ID with its quantity, the hidden rows, then every currency with a nonzero quantity
-- `/moxie reset` - move the panel back to the crafting window's top-right corner
+- `/moxie debug [on|off]` - toggle or set debug logging
+- `/moxie debug dump` - print the anchor state, every tracked currency and item ID with its quantity, the hidden rows, then every currency with a nonzero quantity
+- `/moxie reset position` - move the panel back to the crafting window's top-right corner
+- `/moxie reset settings` - restore hidden rows, pin state, thresholds and debug logging to defaults
+- `/moxie status` - show current settings
+- `/moxie version` - show the addon version
+- `/moxie help` - list all commands
 
 ## Installation
 

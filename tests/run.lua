@@ -189,6 +189,99 @@ do
         ns.GetQuantityColor({ currencyID = 3256, quantity = 600 }), GREEN)
 end
 
+--------------------------------------------------------------------------
+-- 5. Slash command dispatch (cross-addon slash command standard, #37).
+--------------------------------------------------------------------------
+do
+    fixtures.reset()
+
+    -- The stub's generic StubObject fabricates plain functions for any
+    -- unconfigured field, which ns.RefreshOptions cannot survive indexing
+    -- further (it is UI wiring, not the pure logic this suite targets).
+    -- Forcing IsShown() false keeps every handler below off that path.
+    ns.optionsPanel.IsShown = function() return false end
+
+    local originalPrint = print
+    local printedLines
+
+    local function dispatch(msg)
+        printedLines = {}
+        print = function(line) table.insert(printedLines, line) end
+        SlashCmdList["MOXIETRACKER"](msg)
+        print = originalPrint
+    end
+
+    local function firstLineHas(needle)
+        return printedLines[1] ~= nil and printedLines[1]:find(needle, 1, true) ~= nil
+    end
+
+    dispatch("")
+    check("bare command opens the options panel (S2)", firstLineHas("no Settings panel"))
+
+    dispatch("options")
+    check("options opens the same way as bare", firstLineHas("no Settings panel"))
+
+    dispatch("bogus")
+    check("an unknown command names what was unrecognised (S4)", firstLineHas("Unknown command: bogus"))
+    check("an unknown command falls back to the full help list", #printedLines > 1)
+
+    dispatch("help")
+    check("help prints no 'unknown command' line", not firstLineHas("Unknown command"))
+    check("help prints the same list an unknown command falls back to", #printedLines > 1)
+
+    MoxieTrackerDB.debugLogging = false
+    dispatch("debug")
+    assertEqual("bare debug toggles the current state", MoxieTrackerDB.debugLogging, true)
+    dispatch("debug")
+    assertEqual("bare debug toggles back", MoxieTrackerDB.debugLogging, false)
+
+    dispatch("debug on")
+    assertEqual("debug on sets the state explicitly", MoxieTrackerDB.debugLogging, true)
+    dispatch("debug off")
+    assertEqual("debug off sets the state explicitly", MoxieTrackerDB.debugLogging, false)
+
+    MoxieTrackerDB.debugLogging = true
+    dispatch("debug maybe")
+    assertEqual("an invalid debug value is rejected instead of applied (S12)", MoxieTrackerDB.debugLogging, true)
+    check("an invalid debug value is reported", firstLineHas("expected 'on', 'off' or 'dump'"))
+
+    dispatch("debug dump")
+    check("debug dump still prints the diagnostic block, not lost in the rename", #printedLines > 3)
+
+    dispatch("reset")
+    check("bare reset prints usage instead of doing nothing", firstLineHas("Usage: /moxie reset"))
+
+    MoxieTrackerDB.hidden = { ["currency:9999"] = true }
+    MoxieTrackerDB.thresholds = { moxie = 700 }
+    MoxieTrackerDB.debugLogging = true
+    ns.frame.pinned = true
+    dispatch("reset settings")
+    assertEqual("reset settings clears hidden rows", MoxieTrackerDB.hidden, nil)
+    assertEqual("reset settings clears threshold overrides", MoxieTrackerDB.thresholds, nil)
+    assertEqual("reset settings clears debug logging", MoxieTrackerDB.debugLogging, nil)
+    assertEqual("reset settings unpins the panel, but does not move it (S9 split)", ns.frame.pinned, false)
+
+    MoxieTrackerDB.offsetX, MoxieTrackerDB.offsetY = 99, 99
+    dispatch("reset position")
+    check("reset position reports what it did", firstLineHas("position reset"))
+    assertEqual("reset position clears the saved offset, reset settings does not touch it",
+        MoxieTrackerDB.offsetX, nil)
+
+    dispatch("status")
+    check("status prints a multi-line settings summary", #printedLines >= 3)
+
+    dispatch("version")
+    check("version prints the addon version", firstLineHas("v0.0.0-test"))
+
+    -- Unchanged, addon-specific command (kept as-is per #37's deviation list).
+    -- "pin" is not exercised here: flipping it true drives RefreshVisibility
+    -- into the full render path, which needs real font-string metrics the
+    -- generic frame stub cannot fabricate -- a stub-fidelity gap, not
+    -- something this change touches.
+    dispatch("showall")
+    check("showall still works", firstLineHas("every row is visible again"))
+end
+
 print(string.format("%d checks, %d failure(s)", count, failures))
 if failures > 0 then
     os.exit(1)

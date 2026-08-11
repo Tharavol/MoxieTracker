@@ -5,6 +5,30 @@ All notable changes to MoxieTracker are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-08-11
+
+Adopts the cross-addon slash command standard (#37).
+
+### Changed
+
+- Bare `/moxie` now opens the options panel instead of printing the command list; that list moved to a new `help` command
+- `debug` is now a real `on`/`off` logging toggle (bare toggles and reports the new state); the old one-shot diagnostic dump moved to `debug dump` so it isn't lost
+- `reset` on its own used to move the panel back to the crafting window's top-right; that's now `reset position`, freeing `reset settings` to restore hidden rows, pin state, thresholds and debug logging to defaults
+- Extracted every `print()` call site (about fifteen of them, each hand-writing its own colour prefix) into a single `ns.Print` helper
+- An unrecognised command, or a recognised one given a bad argument, now says so instead of silently falling back to the command list
+
+### Added
+
+- `status`, `version`, `help`, and `gui` as an additional alias for the options panel (alongside the existing `options`/`config`)
+
+## [1.5.2] - 2026-08-11
+
+### Changed
+
+- Bump TOC Interface to 120100 for WoW 12.1.0
+- Exclude CHANGELOG.md from the packaged zip
+- Add X-ReleaseNotes with the addon summary and repository link
+
 ## [1.5.1] - 2026-08-07
 
 ### Fixed

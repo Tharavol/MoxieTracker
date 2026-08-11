@@ -239,7 +239,7 @@ frame:SetScript("OnEvent", function(self, event, arg1)
         end
     elseif event == "PLAYER_LOGIN" then
         if not MoxieTrackerDB.suppressLoginMessage then
-            print(string.format("|cff33ff99MoxieTracker|r %s loaded. Type /moxie for options.", ns.GetVersion()))
+            ns.Print("%s loaded. Type /moxie for options.", ns.GetVersion())
         end
     elseif event == "TRADE_SKILL_SHOW" then
         SetCraftOpen(true)
