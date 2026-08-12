@@ -289,6 +289,7 @@ during load; that tag was removed and reused for this release.
 - The full GPL-3.0 text, replacing a truncated stub that named the license but
   omitted its terms.
 
+[1.8.0]: https://github.com/Tharavol/MoxieTracker/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/Tharavol/MoxieTracker/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/Tharavol/MoxieTracker/compare/v1.5.2...v1.6.0
 [1.5.1]: https://github.com/Tharavol/MoxieTracker/compare/v1.5.0...v1.5.1
