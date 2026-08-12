@@ -77,21 +77,22 @@ ns.MOXIE_IDS = {
 }
 
 -- One currency per profession, all eleven accounted for: each profession's
--- unspent Midnight Knowledge, confirmed in-game (#38). Summed by
--- ns.CollectUnspentKnowledge rather than shown per-profession, matching the
--- issue's ask for one number per character.
-ns.KNOWLEDGE_IDS = {
-    3150, -- Alchemy
-    3151, -- Blacksmithing
-    3152, -- Enchanting
-    3153, -- Engineering
-    3154, -- Herbalism
-    3155, -- Inscription
-    3156, -- Jewelcrafting
-    3157, -- Leatherworking
-    3158, -- Mining
-    3159, -- Skinning
-    3160, -- Tailoring
+-- unspent Midnight Knowledge, confirmed in-game (#38). Named per profession,
+-- not just a bare ID list, because the Knowledge Points roster breaks a
+-- character's total down per profession when they hold points in more than
+-- one (ns.CollectUnspentKnowledgeByProfession in the Collect file).
+ns.KNOWLEDGE_PROFESSIONS = {
+    { id = 3150, name = "Alchemy" },
+    { id = 3151, name = "Blacksmithing" },
+    { id = 3152, name = "Enchanting" },
+    { id = 3153, name = "Engineering" },
+    { id = 3154, name = "Herbalism" },
+    { id = 3155, name = "Inscription" },
+    { id = 3156, name = "Jewelcrafting" },
+    { id = 3157, name = "Leatherworking" },
+    { id = 3158, name = "Mining" },
+    { id = 3159, name = "Skinning" },
+    { id = 3160, name = "Tailoring" },
 }
 
 -- Bag items, not currencies: these come from C_Item rather than C_CurrencyInfo
@@ -189,6 +190,23 @@ function ns.SetHidden(key, hidden)
         MoxieTrackerDB.hidden[key] = true
     elseif MoxieTrackerDB.hidden then
         MoxieTrackerDB.hidden[key] = nil
+    end
+end
+
+-- Muted characters (#38 follow-up): once muted, a character's knowledge-roster
+-- entry never renders again, even after it re-snapshots on a later login.
+-- Mirrors ns.IsHidden/ns.SetHidden's shape exactly, just keyed by character
+-- rather than by currency/item row.
+function ns.IsCharacterMuted(key)
+    return MoxieTrackerDB.mutedCharacters ~= nil and MoxieTrackerDB.mutedCharacters[key] == true
+end
+
+function ns.SetCharacterMuted(key, muted)
+    if muted then
+        MoxieTrackerDB.mutedCharacters = MoxieTrackerDB.mutedCharacters or {}
+        MoxieTrackerDB.mutedCharacters[key] = true
+    elseif MoxieTrackerDB.mutedCharacters then
+        MoxieTrackerDB.mutedCharacters[key] = nil
     end
 end
 

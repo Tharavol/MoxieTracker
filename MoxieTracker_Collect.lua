@@ -144,16 +144,31 @@ end
 -- Knowledge points roster (#38)
 --------------------------------------------------------------------------------
 
--- Sums unspent Midnight Knowledge across all eleven professions. A
--- profession the character doesn't have simply reports no currency info, so
--- this doesn't need to know which professions actually exist for them.
+-- Unspent Midnight Knowledge for the current character, broken down by
+-- profession and name-sorted. A profession the character doesn't have simply
+-- reports no currency info, so this doesn't need to know which professions
+-- actually exist for them; professions at 0 are left out, the same "don't
+-- show what isn't there" rule the roster applies to whole characters.
+function ns.CollectUnspentKnowledgeByProfession()
+    local list = {}
+    for _, profession in ipairs(ns.KNOWLEDGE_PROFESSIONS) do
+        local info = C_CurrencyInfo.GetCurrencyInfo(profession.id)
+        local points = info and (info.quantity or 0) or 0
+        if points > 0 then
+            table.insert(list, { name = profession.name, points = points })
+        end
+    end
+    table.sort(list, function(a, b)
+        return a.name < b.name
+    end)
+    return list
+end
+
+-- Sums unspent Midnight Knowledge across all eleven professions.
 function ns.CollectUnspentKnowledge()
     local total = 0
-    for _, currencyID in ipairs(ns.KNOWLEDGE_IDS) do
-        local info = C_CurrencyInfo.GetCurrencyInfo(currencyID)
-        if info then
-            total = total + (info.quantity or 0)
-        end
+    for _, profession in ipairs(ns.CollectUnspentKnowledgeByProfession()) do
+        total = total + profession.points
     end
     return total
 end
@@ -162,27 +177,63 @@ end
 -- roster, so it stays visible while playing a different character. Called
 -- on login; there is no scan of other characters, because the client cannot
 -- see their state -- the roster grows one entry at a time as each alt logs
--- in, which is the whole "accumulation" mechanism the issue asks for.
+-- in, which is the whole "accumulation" mechanism the issue asks for. The
+-- per-profession breakdown is saved alongside the total so another
+-- character's roster entry can show it too, not just the current one's.
 function ns.SnapshotKnowledge()
     local key, name = ns.GetCharacterKey()
+    local professions = ns.CollectUnspentKnowledgeByProfession()
+    local total = 0
+    for _, profession in ipairs(professions) do
+        total = total + profession.points
+    end
+
     MoxieTrackerDB.knowledge = MoxieTrackerDB.knowledge or {}
-    MoxieTrackerDB.knowledge[key] = { name = name, points = ns.CollectUnspentKnowledge() }
+    MoxieTrackerDB.knowledge[key] = { name = name, points = total, professions = professions }
 end
 
 -- Returns the saved roster as a name-sorted array. The current character's
 -- entry is always present and always live (not the last login snapshot), so
 -- spending or earning points mid-session doesn't look stale until the next
--- login; every other character reflects whatever their last login saw.
-function ns.CollectKnowledgeRoster()
+-- login; every other character reflects whatever their last login saw. A
+-- character snapshotted before the per-profession breakdown existed carries
+-- no `professions` field until their next login re-snapshots it -- display
+-- code treats that the same as a single-profession character (a plain
+-- "Name: total" line) rather than erroring on the missing field.
+--
+-- `includeMuted` is for the options panel, which has to list muted characters
+-- in order to offer un-muting them -- same shape as CollectTracked's
+-- `includeHidden`. Muted is checked here rather than left to the caller so a
+-- muted character can never slip back in through a display path that forgets
+-- the filter.
+function ns.CollectKnowledgeRoster(includeMuted)
     local currentKey, currentName = ns.GetCharacterKey()
-    local roster = { { name = currentName, points = ns.CollectUnspentKnowledge() } }
-    local seen = { [currentKey] = true }
+    local roster = {}
+    local seen = {}
+
+    local function Add(key, name, points, professions)
+        if seen[key] then
+            return
+        end
+        seen[key] = true
+
+        local muted = ns.IsCharacterMuted(key)
+        if muted and not includeMuted then
+            return
+        end
+
+        table.insert(roster, { key = key, name = name, points = points, professions = professions, muted = muted })
+    end
+
+    local currentProfessions = ns.CollectUnspentKnowledgeByProfession()
+    local currentTotal = 0
+    for _, profession in ipairs(currentProfessions) do
+        currentTotal = currentTotal + profession.points
+    end
+    Add(currentKey, currentName, currentTotal, currentProfessions)
 
     for key, entry in pairs(MoxieTrackerDB.knowledge or {}) do
-        if not seen[key] then
-            table.insert(roster, { name = entry.name, points = entry.points })
-            seen[key] = true
-        end
+        Add(key, entry.name, entry.points, entry.professions)
     end
 
     table.sort(roster, function(a, b)

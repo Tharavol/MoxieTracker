@@ -252,11 +252,15 @@ do
     check("bare reset prints usage instead of doing nothing", firstLineHas("Usage: /moxie reset"))
 
     MoxieTrackerDB.hidden = { ["currency:9999"] = true }
+    MoxieTrackerDB.mutedCharacters = { ["Borin-Stormrage"] = true }
+    MoxieTrackerDB.hideKnowledgeWindow = true
     MoxieTrackerDB.thresholds = { moxie = 700 }
     MoxieTrackerDB.debugLogging = true
     ns.frame.pinned = true
     dispatch("reset settings")
     assertEqual("reset settings clears hidden rows", MoxieTrackerDB.hidden, nil)
+    assertEqual("reset settings clears muted characters", MoxieTrackerDB.mutedCharacters, nil)
+    assertEqual("reset settings clears the Knowledge Points window toggle", MoxieTrackerDB.hideKnowledgeWindow, nil)
     assertEqual("reset settings clears threshold overrides", MoxieTrackerDB.thresholds, nil)
     assertEqual("reset settings clears debug logging", MoxieTrackerDB.debugLogging, nil)
     assertEqual("reset settings unpins the panel, but does not move it (S9 split)", ns.frame.pinned, false)
@@ -298,6 +302,13 @@ do
 
     assertEqual("unspent knowledge sums across every tracked profession",
         ns.CollectUnspentKnowledge(), 10)
+
+    local byProfession = ns.CollectUnspentKnowledgeByProfession()
+    assertEqual("per-profession breakdown excludes professions at 0", #byProfession, 3)
+    assertEqual("per-profession breakdown is name-sorted", byProfession[1].name, "Alchemy")
+    assertEqual("per-profession breakdown carries each profession's own points", byProfession[1].points, 3)
+    assertEqual("per-profession breakdown, second entry", byProfession[2].name, "Mining")
+    assertEqual("per-profession breakdown, third entry", byProfession[3].name, "Tailoring")
 end
 
 do
@@ -313,6 +324,10 @@ do
     assertEqual("snapshot records the current character under its key",
         MoxieTrackerDB.knowledge[key].points, 7)
     assertEqual("snapshot records the display name", MoxieTrackerDB.knowledge[key].name, "Alaria")
+    assertEqual("snapshot records the per-profession breakdown",
+        #MoxieTrackerDB.knowledge[key].professions, 1)
+    assertEqual("the saved breakdown's profession is named",
+        MoxieTrackerDB.knowledge[key].professions[1].name, "Alchemy")
 end
 
 do
@@ -349,6 +364,89 @@ do
     local roster = ns.CollectKnowledgeRoster()
     assertEqual("the current character's roster entry is live, not the stale snapshot",
         roster[1].points, 9)
+end
+
+--------------------------------------------------------------------------
+-- 7. Muted characters (#38 follow-up). A muted character is dropped from
+-- the roster everywhere except the options panel's own list, which needs
+-- to keep showing it (unchecked) to offer un-muting it.
+--------------------------------------------------------------------------
+do
+    fixtures.reset()
+
+    assertEqual("a character starts unmuted", ns.IsCharacterMuted("Borin-Stormrage"), false)
+    ns.SetCharacterMuted("Borin-Stormrage", true)
+    assertEqual("SetCharacterMuted(true) marks the character muted",
+        ns.IsCharacterMuted("Borin-Stormrage"), true)
+    ns.SetCharacterMuted("Borin-Stormrage", false)
+    assertEqual("SetCharacterMuted(false) clears it again", ns.IsCharacterMuted("Borin-Stormrage"), false)
+end
+
+do
+    fixtures.reset()
+    MoxieTrackerDB.knowledge = {
+        ["Borin-Stormrage"] = { name = "Borin", points = 12 },
+    }
+    ns.SetCharacterMuted("Borin-Stormrage", true)
+
+    fixtures.setCharacter("Alaria", "Stormrage")
+    fixtures.setCurrency(3150, "Alchemy Knowledge", 4)
+
+    local roster = ns.CollectKnowledgeRoster()
+    assertEqual("a muted character is excluded from the default roster", #roster, 1)
+    assertEqual("the unmuted current character remains", roster[1].name, "Alaria")
+
+    local withMuted = ns.CollectKnowledgeRoster(true)
+    assertEqual("includeMuted=true keeps the muted character listed", #withMuted, 2)
+    local borin
+    for _, entry in ipairs(withMuted) do
+        if entry.name == "Borin" then
+            borin = entry
+        end
+    end
+    check("the muted character's entry is flagged muted", borin ~= nil and borin.muted == true)
+    check("the unmuted character's entry is not flagged muted",
+        withMuted[1].name == "Alaria" and withMuted[1].muted == false)
+end
+
+--------------------------------------------------------------------------
+-- 8. Per-profession breakdown on the roster (the "show it indented per
+-- profession" follow-up to #38).
+--------------------------------------------------------------------------
+do
+    fixtures.reset()
+    fixtures.setCharacter("Tharavol", "Stormrage")
+    fixtures.setCurrency(3153, "Engineering Knowledge", 2) -- Engineering
+    fixtures.setCurrency(3160, "Tailoring Knowledge", 2)   -- Tailoring
+
+    local roster = ns.CollectKnowledgeRoster()
+    assertEqual("the current character's roster entry carries its breakdown", #roster[1].professions, 2)
+    assertEqual("current character total still sums the breakdown", roster[1].points, 4)
+    assertEqual("breakdown entry is name-sorted, first", roster[1].professions[1].name, "Engineering")
+    assertEqual("breakdown entry is name-sorted, second", roster[1].professions[2].name, "Tailoring")
+end
+
+do
+    fixtures.reset()
+
+    -- A character saved before the per-profession breakdown existed: only
+    -- `points` and `name`, no `professions` field. Must not error, and must
+    -- still report its total.
+    MoxieTrackerDB.knowledge = {
+        ["Borin-Stormrage"] = { name = "Borin", points = 9 },
+    }
+    fixtures.setCharacter("Alaria", "Stormrage")
+
+    local roster = ns.CollectKnowledgeRoster()
+    local borin
+    for _, entry in ipairs(roster) do
+        if entry.name == "Borin" then
+            borin = entry
+        end
+    end
+    check("a pre-breakdown character entry still appears", borin ~= nil)
+    check("its professions field is absent rather than fabricated", borin ~= nil and borin.professions == nil)
+    assertEqual("its total still comes through", borin and borin.points, 9)
 end
 
 print(string.format("%d checks, %d failure(s)", count, failures))

@@ -103,6 +103,8 @@ local function HandleReset(arg1)
         ns.Print("position reset to the crafting window's top-right corner.")
     elseif arg1 == "settings" then
         MoxieTrackerDB.hidden = nil
+        MoxieTrackerDB.mutedCharacters = nil
+        MoxieTrackerDB.hideKnowledgeWindow = nil
         MoxieTrackerDB.thresholds = nil
         MoxieTrackerDB.debugLogging = nil
         ns.frame.pinned = false
@@ -126,6 +128,16 @@ local function PrintStatus()
         end
     end
     ns.Print("hidden rows: %d", hiddenCount)
+
+    local mutedCount = 0
+    if MoxieTrackerDB.mutedCharacters then
+        for _ in pairs(MoxieTrackerDB.mutedCharacters) do
+            mutedCount = mutedCount + 1
+        end
+    end
+    ns.Print("muted characters: %d", mutedCount)
+
+    ns.Print("Knowledge Points window: %s", MoxieTrackerDB.hideKnowledgeWindow and "hidden" or "shown")
 
     if MoxieTrackerDB.thresholds then
         local parts = {}
@@ -189,7 +201,8 @@ local COMMANDS = {
         name = "reset",
         help = {
             "/moxie reset position - move the panel back to the crafting window's top-right",
-            "/moxie reset settings - restore hidden rows, pin state, thresholds and debug logging to defaults"
+            "/moxie reset settings - restore hidden rows, muted characters, the Knowledge Points window, " ..
+                "pin state, thresholds and debug logging to defaults"
         },
         handler = HandleReset
     },

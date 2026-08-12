@@ -10,17 +10,46 @@ local FIRST_LINE_Y = 24 -- top offset of the first currency/item row, below the 
 local BASE_HEIGHT = 40 -- header + padding above the rows, before LINE_HEIGHT * row count
 local EMPTY_HEIGHT = 56 -- height while showing the single "nothing tracked" fallback line
 local DEFAULT_HEIGHT = 70 -- placeholder until the first UpdateDisplay call resizes the frame
+local INDENT = "    " -- one profession row under a multi-profession character name
+local KNOWLEDGE_WINDOW_GAP = 6 -- vertical gap between the two windows
 
-local frame = CreateFrame("Frame", "MoxieTrackerFrame", UIParent, "BackdropTemplate")
-frame:SetSize(MIN_WIDTH, DEFAULT_HEIGHT)
+-- Shared shell for both windows: same backdrop, same starting size, same
+-- line-pool table. Movement and dragging are wired separately below, since
+-- only the main window is user-draggable -- the Knowledge Points window
+-- stays anchored beneath it instead.
+local function CreateTrackerWindow(globalName)
+    local window = CreateFrame("Frame", globalName, UIParent, "BackdropTemplate")
+    window:SetSize(MIN_WIDTH, DEFAULT_HEIGHT)
+    window:SetClampedToScreen(true)
+    window:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+    })
+    window:SetBackdropColor(0, 0, 0, 0.45)
+    window:SetBackdropBorderColor(0.6, 0.6, 0.6, 0.9)
+    window.lines = {}
+    return window
+end
+
+local frame = CreateTrackerWindow("MoxieTrackerFrame")
 frame:EnableMouse(true)
 frame:RegisterForDrag("LeftButton")
 frame:SetMovable(true)
-frame:SetClampedToScreen(true)
+frame.movable = true
 -- Never reassigned after this, so ns.frame and the local above always share
 -- the same table; other files reach it through ns, this file keeps using the
 -- shorter local name throughout.
 ns.frame = frame
+
+-- The Knowledge Points roster (#38) lives in its own window below the main
+-- one rather than as a section within it, so a long roster does not push the
+-- currency rows around. Anchored to `frame`'s bottom edge -- a live SetPoint
+-- relationship, not a one-time copy -- so it tracks both drags and the main
+-- window's own height changes with no extra code here.
+local knowledgeFrame = CreateTrackerWindow("MoxieTrackerKnowledgeFrame")
+knowledgeFrame:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 0, -KNOWLEDGE_WINDOW_GAP)
+ns.knowledgeFrame = knowledgeFrame
 
 -- Anchored to the crafting window so the panel tracks it when the user moves
 -- or rescales that window. Falls back to the screen corner if the crafting UI
@@ -74,36 +103,39 @@ end)
 
 ns.ApplyAnchor()
 
-frame:SetBackdrop({
-    bgFile = "Interface\\Buttons\\WHITE8X8",
-    edgeFile = "Interface\\Buttons\\WHITE8X8",
-    edgeSize = 1,
-})
-frame:SetBackdropColor(0, 0, 0, 0.45)
-frame:SetBackdropBorderColor(0.6, 0.6, 0.6, 0.9)
-
 frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 frame.title:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -8)
 frame.title:SetText("Moxie Tracker")
 
-frame.lines = {}
+knowledgeFrame.title = knowledgeFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+knowledgeFrame.title:SetPoint("TOPLEFT", knowledgeFrame, "TOPLEFT", 8, -8)
+knowledgeFrame.title:SetText("Knowledge Points")
 
 -- Each line is a Frame, not a FontString: only Frames support OnEnter/OnLeave.
-local function EnsureLine(index)
-    local line = frame.lines[index]
+-- Shared by both windows; `owner` is whichever one the line belongs to, so a
+-- line always resizes/hovers/drags its own window rather than always
+-- reaching for the module-level `frame`.
+local function EnsureLine(owner, index)
+    local line = owner.lines[index]
     if not line then
-        line = CreateFrame("Frame", nil, frame)
-        line:SetPoint("TOPLEFT", frame, "TOPLEFT", PADDING, -(FIRST_LINE_Y + ((index - 1) * LINE_HEIGHT)))
-        line:SetPoint("RIGHT", frame, "RIGHT", -PADDING, 0)
+        line = CreateFrame("Frame", nil, owner)
+        line:SetPoint("TOPLEFT", owner, "TOPLEFT", PADDING, -(FIRST_LINE_Y + ((index - 1) * LINE_HEIGHT)))
+        line:SetPoint("RIGHT", owner, "RIGHT", -PADDING, 0)
         line:SetHeight(LINE_HEIGHT)
-        line:EnableMouse(true)
-        line:RegisterForDrag("LeftButton")
-        line:SetScript("OnDragStart", function()
-            frame:StartMoving()
-        end)
-        line:SetScript("OnDragStop", function()
-            frame:StopMovingOrSizing()
-        end)
+
+        -- Only the main window drags via its rows; the Knowledge Points
+        -- window isn't independently movable, so wiring drag scripts onto
+        -- its lines would have nothing to do.
+        if owner.movable then
+            line:EnableMouse(true)
+            line:RegisterForDrag("LeftButton")
+            line:SetScript("OnDragStart", function()
+                owner:StartMoving()
+            end)
+            line:SetScript("OnDragStop", function()
+                owner:StopMovingOrSizing()
+            end)
+        end
 
         line.text = line:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
         line.text:SetAllPoints(line)
@@ -124,7 +156,7 @@ local function EnsureLine(index)
             GameTooltip:Hide()
         end)
 
-        frame.lines[index] = line
+        owner.lines[index] = line
     end
     return line
 end
@@ -144,7 +176,7 @@ function ns.UpdateDisplay()
 
     local function RenderLine(text, currencyID, itemID)
         lineIndex = lineIndex + 1
-        local line = EnsureLine(lineIndex)
+        local line = EnsureLine(frame, lineIndex)
         line.currencyID = currencyID
         line.itemID = itemID
         line.text:SetText(text)
@@ -164,25 +196,82 @@ function ns.UpdateDisplay()
         end
     end
 
-    -- Knowledge Points roster (#38): always at least the current character,
-    -- growing as more alts log in. A plain-text header, matching how row
-    -- names elsewhere carry no colour code of their own.
-    local roster = ns.CollectKnowledgeRoster()
-    RenderLine("Knowledge Points")
-    for _, entry in ipairs(roster) do
-        RenderLine(string.format("%s%s|r: %d", ns.GREEN, entry.name, entry.points))
-    end
-
     frame:SetWidth(math.max(MIN_WIDTH, math.ceil(widest) + (PADDING * 2)))
     frame:SetHeight(math.max(EMPTY_HEIGHT, BASE_HEIGHT + (lineIndex * LINE_HEIGHT)))
 end
 
+-- Knowledge Points roster (#38), in its own window (see knowledgeFrame above)
+-- rather than a section of the main one. Grows as more alts log in; muted
+-- characters (options panel) never appear here. A character with nothing
+-- unspent is dropped entirely rather than shown at 0, and the whole window
+-- hides itself when that leaves nothing to show, the same "distinguish
+-- nothing-to-show from broken" concern as the main window, just resolved by
+-- hiding rather than a fallback line since there's no user action (like
+-- unhiding a row) that would fix an empty roster. MoxieTrackerDB.hideKnowledgeWindow
+-- is a separate, blunter off switch (options panel) for hiding the whole
+-- window regardless of content.
+function ns.UpdateKnowledgeDisplay()
+    if MoxieTrackerDB.hideKnowledgeWindow then
+        knowledgeFrame:Hide()
+        return
+    end
+
+    local roster = ns.CollectKnowledgeRoster()
+
+    for index = 1, #knowledgeFrame.lines do
+        knowledgeFrame.lines[index]:Hide()
+    end
+
+    local widest = 0
+    local lineIndex = 0
+
+    local function RenderLine(text)
+        lineIndex = lineIndex + 1
+        local line = EnsureLine(knowledgeFrame, lineIndex)
+        line.currencyID = nil
+        line.itemID = nil
+        line.text:SetText(text)
+        line:Show()
+        widest = math.max(widest, line.text:GetStringWidth())
+    end
+
+    for _, entry in ipairs(roster) do
+        if entry.points > 0 then
+            -- Name on its own line, then one indented row per profession
+            -- with unspent points -- always broken out this way, even for a
+            -- character with only one, so the count is never ambiguous
+            -- between "N total" and "N in this profession". Only a
+            -- pre-breakdown legacy entry (see ns.CollectKnowledgeRoster)
+            -- falls back to a plain "Name: total" line, since it has no
+            -- breakdown to show.
+            if entry.professions then
+                RenderLine(string.format("%s%s|r", ns.WHITE, entry.name))
+                for _, profession in ipairs(entry.professions) do
+                    RenderLine(string.format("%s%s%s|r: %s%d|r",
+                        INDENT, ns.WHITE, profession.name, ns.GREEN, profession.points))
+                end
+            else
+                RenderLine(string.format("%s%s|r: %s%d|r", ns.WHITE, entry.name, ns.GREEN, entry.points))
+            end
+        end
+    end
+
+    if lineIndex == 0 then
+        knowledgeFrame:Hide()
+        return
+    end
+
+    knowledgeFrame:SetWidth(math.max(MIN_WIDTH, math.ceil(widest) + (PADDING * 2)))
+    knowledgeFrame:SetHeight(BASE_HEIGHT + (lineIndex * LINE_HEIGHT))
+    knowledgeFrame:Show()
+end
+
 frame:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_TOPRIGHT")
-    GameTooltip:SetText("Artisan Moxie, Shard of Dundun, Unalloyed Abundance, Fused Vitality, Knowledge Points")
+    GameTooltip:SetText("Artisan Moxie, Shard of Dundun, Unalloyed Abundance, Fused Vitality")
     GameTooltip:AddLine(
-        "Shows the current character's tracked amounts, plus unspent Knowledge for every character " ..
-            "that has logged in. /moxie options to choose rows.",
+        "Shows the current character's tracked amounts. Unspent Knowledge for every character that " ..
+            "has logged in appears in a second window below. /moxie options to choose rows.",
         0.7, 0.7, 0.7, true)
     GameTooltip:Show()
 end)
@@ -200,8 +289,12 @@ function ns.RefreshVisibility()
         ns.ApplyAnchor()
         ns.UpdateDisplay()
         frame:Show()
+        -- Shows or hides itself based on whether there's anything to display;
+        -- see ns.UpdateKnowledgeDisplay.
+        ns.UpdateKnowledgeDisplay()
     else
         frame:Hide()
+        knowledgeFrame:Hide()
     end
 end
 
@@ -245,6 +338,14 @@ for _, item in ipairs(ns.TRACKED_ITEMS) do
     end
 end
 
+-- Currency events (CURRENCY_DISPLAY_UPDATE etc.) cover both the tracked
+-- currencies and the Knowledge currencies, so any handler below that reacts
+-- to one refreshes both windows rather than risking one going stale.
+local function RefreshBothWindows()
+    ns.UpdateDisplay()
+    ns.UpdateKnowledgeDisplay()
+end
+
 frame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" then
         if arg1 == ADDON_NAME then
@@ -259,7 +360,7 @@ frame:SetScript("OnEvent", function(self, event, arg1)
         -- character's unspent Knowledge into the account-wide roster.
         ns.SnapshotKnowledge()
         if self:IsShown() then
-            ns.UpdateDisplay()
+            RefreshBothWindows()
         end
     elseif event == "TRADE_SKILL_SHOW" then
         SetCraftOpen(true)
@@ -270,7 +371,7 @@ frame:SetScript("OnEvent", function(self, event, arg1)
             ns.UpdateDisplay()
         end
     elseif self:IsShown() then
-        ns.UpdateDisplay()
+        RefreshBothWindows()
     end
 end)
 
@@ -287,9 +388,13 @@ local function HookCraftingFrame(globalName)
 
     -- UIParent's default MEDIUM strata draws below the crafting window and the
     -- addon panes docked to it, so an overlapping panel would hide behind them.
-    -- Match the crafting frame's strata and sit above it.
+    -- Match the crafting frame's strata and sit above it. Both windows get
+    -- the same treatment so the Knowledge Points window doesn't end up
+    -- behind the crafting frame while the main window sits above it.
     frame:SetFrameStrata(target:GetFrameStrata())
     frame:SetFrameLevel(target:GetFrameLevel() + 10)
+    knowledgeFrame:SetFrameStrata(target:GetFrameStrata())
+    knowledgeFrame:SetFrameLevel(target:GetFrameLevel() + 10)
 
     target:HookScript("OnShow", function()
         SetCraftOpen(true)

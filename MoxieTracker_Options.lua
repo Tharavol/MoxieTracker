@@ -11,9 +11,10 @@ local OPTIONS_ROW_HEIGHT = 26
 local OPTIONS_HEADER_HEIGHT = 20
 local OPTIONS_SECTION_GAP = 6
 local OPTIONS_LOGIN_ROW_Y = -72
+local OPTIONS_KNOWLEDGE_WINDOW_ROW_Y = OPTIONS_LOGIN_ROW_Y - OPTIONS_ROW_HEIGHT
 
 -- Position section: a header, two offset fields, and a reset button.
-local OPTIONS_POSITION_HEADER_Y = OPTIONS_LOGIN_ROW_Y - OPTIONS_ROW_HEIGHT
+local OPTIONS_POSITION_HEADER_Y = OPTIONS_KNOWLEDGE_WINDOW_ROW_Y - OPTIONS_ROW_HEIGHT
 local OPTIONS_POSITION_X_ROW_Y = OPTIONS_POSITION_HEADER_Y - OPTIONS_HEADER_HEIGHT
 local OPTIONS_POSITION_Y_ROW_Y = OPTIONS_POSITION_X_ROW_Y - OPTIONS_ROW_HEIGHT
 local OPTIONS_POSITION_RESET_Y = OPTIONS_POSITION_Y_ROW_Y - OPTIONS_ROW_HEIGHT
@@ -26,6 +27,18 @@ local OPTIONS_THRESHOLD_FV_ROW_Y = OPTIONS_THRESHOLD_MOXIE_ROW_Y - OPTIONS_ROW_H
 local OPTIONS_THRESHOLD_RESET_Y = OPTIONS_THRESHOLD_FV_ROW_Y - OPTIONS_ROW_HEIGHT
 
 local OPTIONS_FIRST_ROW_Y = OPTIONS_THRESHOLD_RESET_Y - OPTIONS_ROW_HEIGHT - OPTIONS_SECTION_GAP
+
+-- Tracked-row scroll list, sized smaller than before (was 260) to leave room
+-- for the character-mute section below it on the same canvas.
+local OPTIONS_SCROLL_WIDTH = 500
+local OPTIONS_SCROLL_HEIGHT = 160
+
+-- Character-mute section: a header and its own scroll list, below the
+-- tracked-row list rather than merged into it -- muting an alt out of the
+-- Knowledge Points roster forever is a different action from hiding one row.
+local OPTIONS_CHAR_HEADER_Y = OPTIONS_FIRST_ROW_Y - OPTIONS_SCROLL_HEIGHT - OPTIONS_SECTION_GAP
+local OPTIONS_CHAR_SCROLL_Y = OPTIONS_CHAR_HEADER_Y - OPTIONS_HEADER_HEIGHT
+local OPTIONS_CHAR_SCROLL_HEIGHT = 100
 
 local optionsCategory
 
@@ -72,8 +85,35 @@ local function EnsureOptionRow(index)
     return row
 end
 
+-- Same shape as EnsureOptionRow above, but for the character-mute list: a
+-- muted character is dropped from the Knowledge Points roster everywhere,
+-- not just this row's checkbox.
+local function EnsureCharacterRow(index)
+    local row = ns.optionsPanel.charRows[index]
+    if not row then
+        row = CreateFrame("CheckButton", "MoxieTrackerCharacterOption" .. index,
+            ns.optionsPanel.charRowsContent, "UICheckButtonTemplate")
+        row:SetSize(24, 24)
+        row:SetPoint("TOPLEFT", ns.optionsPanel.charRowsContent, "TOPLEFT", 0, -((index - 1) * OPTIONS_ROW_HEIGHT))
+
+        row.label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        row.label:SetPoint("LEFT", row, "RIGHT", 4, 0)
+
+        row:SetScript("OnClick", function(self)
+            ns.SetCharacterMuted(self.entryKey, not self:GetChecked())
+            if ns.frame:IsShown() then
+                ns.UpdateDisplay()
+            end
+        end)
+
+        ns.optionsPanel.charRows[index] = row
+    end
+    return row
+end
+
 function ns.RefreshOptions()
     ns.optionsPanel.loginCheckbox:SetChecked(not MoxieTrackerDB.suppressLoginMessage)
+    ns.optionsPanel.knowledgeWindowCheckbox:SetChecked(not MoxieTrackerDB.hideKnowledgeWindow)
 
     local offsetX, offsetY = ns.GetOffset()
     ns.optionsPanel.xEditBox:SetText(tostring(offsetX))
@@ -114,12 +154,35 @@ function ns.RefreshOptions()
     else
         ns.optionsPanel.empty:Hide()
     end
+
+    -- Character mute list. includeMuted=true so a muted character stays
+    -- listed (unchecked) instead of disappearing along with its row -- the
+    -- only way to un-mute it. The current character is always in this list,
+    -- even at 0 points, so it can be pre-muted before it earns any.
+    local roster = ns.CollectKnowledgeRoster(true)
+
+    for _, row in ipairs(ns.optionsPanel.charRows) do
+        row:Hide()
+    end
+
+    for index, entry in ipairs(roster) do
+        local row = EnsureCharacterRow(index)
+        row.entryKey = entry.key
+        row.label:SetText(entry.name)
+        row:SetChecked(not entry.muted)
+        row:Show()
+    end
+
+    ns.optionsPanel.charRowsContent:SetHeight(math.max(1, #roster * OPTIONS_ROW_HEIGHT))
+    ns.optionsPanel.charScrollFrame:UpdateScrollChildRect()
+    ns.optionsPanel.charScrollFrame:SetVerticalScroll(0)
 end
 
 local function CreateOptionsPanel()
     local panel = CreateFrame("Frame", "MoxieTrackerOptionsPanel", UIParent)
     panel.name = "MoxieTracker"
     panel.rows = {}
+    panel.charRows = {}
 
     local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, -16)
@@ -141,6 +204,23 @@ local function CreateOptionsPanel()
         MoxieTrackerDB.suppressLoginMessage = not self:GetChecked()
     end)
     panel.loginCheckbox = loginCheckbox
+
+    -- Separate from muting individual characters: this is the blunt "I don't
+    -- want this second window at all" off switch, independent of the roster.
+    local knowledgeWindowCheckbox = CreateFrame("CheckButton", "MoxieTrackerKnowledgeWindowOption", panel,
+        "UICheckButtonTemplate")
+    knowledgeWindowCheckbox:SetSize(24, 24)
+    knowledgeWindowCheckbox:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, OPTIONS_KNOWLEDGE_WINDOW_ROW_Y)
+    knowledgeWindowCheckbox.label = knowledgeWindowCheckbox:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    knowledgeWindowCheckbox.label:SetPoint("LEFT", knowledgeWindowCheckbox, "RIGHT", 4, 0)
+    knowledgeWindowCheckbox.label:SetText("Show Knowledge Points window")
+    knowledgeWindowCheckbox:SetScript("OnClick", function(self)
+        MoxieTrackerDB.hideKnowledgeWindow = not self:GetChecked()
+        if ns.frame:IsShown() then
+            ns.UpdateKnowledgeDisplay()
+        end
+    end)
+    panel.knowledgeWindowCheckbox = knowledgeWindowCheckbox
 
     local positionHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     positionHeader:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, OPTIONS_POSITION_HEADER_Y)
@@ -271,8 +351,6 @@ local function CreateOptionsPanel()
     -- rather than an error. Other elements on this panel look unaffected by
     -- the same underlying panel-sizing issue only because plain FontStrings
     -- and CheckButtons are not clipped to their parent's bounds.
-    local OPTIONS_SCROLL_WIDTH = 500
-    local OPTIONS_SCROLL_HEIGHT = 260
     local scrollFrame = CreateFrame("ScrollFrame", "MoxieTrackerOptionsScrollFrame", panel,
         "UIPanelScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, OPTIONS_FIRST_ROW_Y)
@@ -296,6 +374,27 @@ local function CreateOptionsPanel()
     panel.empty:SetPoint("TOPLEFT", rowsContent, "TOPLEFT", 0, 0)
     panel.empty:SetText("Nothing to configure yet - open a profession or log in on a character with moxie.")
     panel.empty:Hide()
+
+    local charHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    charHeader:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, OPTIONS_CHAR_HEADER_Y)
+    charHeader:SetText("Characters")
+
+    local charSubtitle = panel:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+    charSubtitle:SetPoint("LEFT", charHeader, "RIGHT", 8, 0)
+    charSubtitle:SetText("(uncheck to mute a character from the Knowledge Points list forever)")
+
+    -- Same scroll-frame setup as the tracked-row list above, and for the same
+    -- reason: an accumulating roster of alts can outgrow any fixed layout.
+    local charScrollFrame = CreateFrame("ScrollFrame", "MoxieTrackerOptionsCharScrollFrame", panel,
+        "UIPanelScrollFrameTemplate")
+    charScrollFrame:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, OPTIONS_CHAR_SCROLL_Y)
+    charScrollFrame:SetSize(OPTIONS_SCROLL_WIDTH, OPTIONS_CHAR_SCROLL_HEIGHT)
+
+    local charRowsContent = CreateFrame("Frame", nil, charScrollFrame)
+    charRowsContent:SetSize(OPTIONS_SCROLL_WIDTH, 1)
+    charScrollFrame:SetScrollChild(charRowsContent)
+    panel.charScrollFrame = charScrollFrame
+    panel.charRowsContent = charRowsContent
 
     -- Hidden until the Settings frame shows it. Also makes OnShow the single
     -- point where rows are built, rather than it having to run once here too.
