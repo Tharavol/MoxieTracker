@@ -449,6 +449,123 @@ do
     assertEqual("its total still comes through", borin and borin.points, 9)
 end
 
+--------------------------------------------------------------------------
+-- 9. Per-character profession muting (options panel follow-up to #38).
+-- Finer-grained than character muting: hides one profession's points for
+-- one character without dropping the whole character from the roster.
+--------------------------------------------------------------------------
+do
+    fixtures.reset()
+
+    assertEqual("a profession starts unmuted",
+        ns.IsKnowledgeProfessionMuted("Borin-Stormrage", "Mining"), false)
+    ns.SetKnowledgeProfessionMuted("Borin-Stormrage", "Mining", true)
+    assertEqual("SetKnowledgeProfessionMuted(true) marks it muted",
+        ns.IsKnowledgeProfessionMuted("Borin-Stormrage", "Mining"), true)
+    assertEqual("a different profession for the same character is unaffected",
+        ns.IsKnowledgeProfessionMuted("Borin-Stormrage", "Tailoring"), false)
+    assertEqual("the same profession for a different character is unaffected",
+        ns.IsKnowledgeProfessionMuted("Alaria-Stormrage", "Mining"), false)
+    ns.SetKnowledgeProfessionMuted("Borin-Stormrage", "Mining", false)
+    assertEqual("SetKnowledgeProfessionMuted(false) clears it again",
+        ns.IsKnowledgeProfessionMuted("Borin-Stormrage", "Mining"), false)
+end
+
+do
+    fixtures.reset()
+    fixtures.setCharacter("Tharavol", "Stormrage")
+    fixtures.setCurrency(3153, "Engineering Knowledge", 2) -- Engineering
+    fixtures.setCurrency(3160, "Tailoring Knowledge", 3)   -- Tailoring
+
+    local key = ns.GetCharacterKey()
+    ns.SetKnowledgeProfessionMuted(key, "Engineering", true)
+
+    local roster = ns.CollectKnowledgeRoster()
+    assertEqual("a muted profession is dropped from the live breakdown", #roster[1].professions, 1)
+    assertEqual("the remaining profession is the unmuted one", roster[1].professions[1].name, "Tailoring")
+    assertEqual("the character's total excludes the muted profession's points", roster[1].points, 3)
+end
+
+do
+    fixtures.reset()
+
+    -- A different character's stored snapshot has two professions; one is
+    -- muted after the fact, without that character logging in again.
+    MoxieTrackerDB.knowledge = {
+        ["Borin-Stormrage"] = {
+            name = "Borin",
+            points = 15,
+            professions = {
+                { name = "Alchemy", points = 6 },
+                { name = "Mining", points = 9 },
+            },
+        },
+    }
+    ns.SetKnowledgeProfessionMuted("Borin-Stormrage", "Mining", true)
+
+    fixtures.setCharacter("Alaria", "Stormrage")
+
+    local roster = ns.CollectKnowledgeRoster()
+    local borin
+    for _, entry in ipairs(roster) do
+        if entry.name == "Borin" then
+            borin = entry
+        end
+    end
+    check("the stored character still appears", borin ~= nil)
+    assertEqual("its muted profession is dropped without a new login", borin and #borin.professions, 1)
+    assertEqual("its remaining profession is the unmuted one", borin and borin.professions[1].name, "Alchemy")
+    assertEqual("its total is re-summed from what's left, not the stored total", borin and borin.points, 6)
+end
+
+do
+    fixtures.reset()
+    fixtures.setCharacter("Tharavol", "Stormrage")
+    fixtures.setCurrency(3153, "Engineering Knowledge", 2)
+
+    -- A pre-breakdown legacy entry (no `professions` field) can't be filtered
+    -- by profession -- nothing to check it against -- so it must pass
+    -- through untouched rather than erroring.
+    MoxieTrackerDB.knowledge = {
+        ["Borin-Stormrage"] = { name = "Borin", points = 9 },
+    }
+
+    local roster = ns.CollectKnowledgeRoster()
+    local borin
+    for _, entry in ipairs(roster) do
+        if entry.name == "Borin" then
+            borin = entry
+        end
+    end
+    check("a pre-breakdown entry is unaffected by profession muting",
+        borin ~= nil and borin.professions == nil and borin.points == 9)
+end
+
+do
+    fixtures.reset()
+    fixtures.setCharacter("Tharavol", "Stormrage")
+    fixtures.setCurrency(3153, "Engineering Knowledge", 2)
+    fixtures.setCurrency(3160, "Tailoring Knowledge", 3)
+
+    MoxieTrackerDB.knowledge = {
+        ["Borin-Stormrage"] = {
+            name = "Borin",
+            points = 4,
+            professions = { { name = "Mining", points = 4 } },
+        },
+    }
+    ns.SetKnowledgeProfessionMuted("Tharavol-Stormrage", "Engineering", true)
+    ns.SetCharacterMuted("Borin-Stormrage", true)
+
+    local list = ns.CollectKnowledgeProfessionRoster()
+    assertEqual("a fully muted character contributes no rows", #list, 2)
+    assertEqual("rows are sorted by character then profession", list[1].professionName, "Engineering")
+    check("a muted profession is listed but flagged muted",
+        list[1].characterName == "Tharavol" and list[1].muted == true)
+    check("an unmuted profession is listed and flagged unmuted",
+        list[2].professionName == "Tailoring" and list[2].muted == false)
+end
+
 print(string.format("%d checks, %d failure(s)", count, failures))
 if failures > 0 then
     os.exit(1)

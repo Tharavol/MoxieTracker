@@ -210,6 +210,27 @@ function ns.SetCharacterMuted(key, muted)
     end
 end
 
+-- Muted professions, per character: finer-grained than ns.IsCharacterMuted --
+-- lets a character stay on the roster while hiding just the one profession
+-- (an alt's mained-out trade, say) whose points aren't worth tracking.
+-- Keyed by character key first, then profession name, so muting is per
+-- character rather than account-wide (the same profession can be muted for
+-- one alt and left visible on another).
+function ns.IsKnowledgeProfessionMuted(characterKey, professionName)
+    local muted = MoxieTrackerDB.mutedProfessions
+    return muted ~= nil and muted[characterKey] ~= nil and muted[characterKey][professionName] == true
+end
+
+function ns.SetKnowledgeProfessionMuted(characterKey, professionName, muted)
+    if muted then
+        MoxieTrackerDB.mutedProfessions = MoxieTrackerDB.mutedProfessions or {}
+        MoxieTrackerDB.mutedProfessions[characterKey] = MoxieTrackerDB.mutedProfessions[characterKey] or {}
+        MoxieTrackerDB.mutedProfessions[characterKey][professionName] = true
+    elseif MoxieTrackerDB.mutedProfessions and MoxieTrackerDB.mutedProfessions[characterKey] then
+        MoxieTrackerDB.mutedProfessions[characterKey][professionName] = nil
+    end
+end
+
 -- Offset from the crafting window's TOPRIGHT corner. The panel hangs off the
 -- right edge, dropped down the side. Taken from a placement verified in-game
 -- rather than guessed.

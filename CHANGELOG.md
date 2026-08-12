@@ -5,6 +5,15 @@ All notable changes to MoxieTracker are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- Knowledge is now snapshotted on logout instead of on entering the world. The latter fires on every zone/instance load, not just true login, and could read currency data before it finished syncing from the server, occasionally persisting 0 and clobbering a character's real total until its next login (#38).
+- The options panel's row lists (tracked currencies, muted characters, and the new muted professions below) now share a single scroll region instead of two small ones sitting below an un-scrolled Position/Threshold section. A large-enough roster used to overflow past the bottom of the window and draw over the Close button rather than scrolling.
+
+### Added
+- A "Character Professions" section in the options panel mutes a single profession's Knowledge for a single character, without muting the whole character (#38 follow-up).
+
 ## [1.7.0] - 2026-08-11
 
 ### Added

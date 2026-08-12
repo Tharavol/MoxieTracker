@@ -3,14 +3,36 @@
 -- the Position and Color thresholds sections and the row-list scroll frame.
 local _, ns = ...
 
--- The row list is rebuilt every time the panel is shown rather than built
--- once at load, because what is trackable changes: moxie rows exist only for
--- professions the character has, and the keyword fallback can turn up a
--- currency no ID table knows about.
+-- Everything below the title/subtitle lives inside one scrolling content
+-- frame (see CreateOptionsPanel's scrollFrame), merging what used to be two
+-- separate small scroll boxes (the tracked-row list and the character-mute
+-- list) plus the un-scrolled Position/Threshold sections above them. Those
+-- fixed sections plus a growing roster of alts could add up to more than the
+-- panel's real visible height, and since nothing wrapped the whole page, the
+-- overflow used to just draw past the bottom of the window and over the
+-- Close button instead of scrolling. A single scroll region covering
+-- everything fixes that regardless of how many rows any of the three lists
+-- below end up with.
+--
+-- The scroll frame's own size is an explicit SetSize (see its creation
+-- below), not anchored to the options panel's edges, because a canvas
+-- settings category is not guaranteed to stretch the frame it's given to
+-- fill the available area -- in-game `/run` previously confirmed
+-- MoxieTrackerOptionsPanel:GetWidth() genuinely returns 0, i.e. the panel is
+-- never actually resized to fill the canvas (see docs/HANDOFF.md). Anchoring
+-- to it would collapse the scroll frame to nothing instead of filling the
+-- page. OPTIONS_CONTENT_HEIGHT is picked to comfortably fit within the
+-- canvas area the pre-existing two-box layout already rendered inside
+-- without complaint; it hasn't been re-verified in-game since the merge, so
+-- treat it as a starting point to confirm against the real client.
 local OPTIONS_ROW_HEIGHT = 26
 local OPTIONS_HEADER_HEIGHT = 20
 local OPTIONS_SECTION_GAP = 6
-local OPTIONS_LOGIN_ROW_Y = -72
+local OPTIONS_CONTENT_WIDTH = 500
+local OPTIONS_CONTENT_HEIGHT = 460
+local OPTIONS_BOTTOM_MARGIN = 16
+
+local OPTIONS_LOGIN_ROW_Y = 0
 local OPTIONS_KNOWLEDGE_WINDOW_ROW_Y = OPTIONS_LOGIN_ROW_Y - OPTIONS_ROW_HEIGHT
 
 -- Position section: a header, two offset fields, and a reset button.
@@ -26,19 +48,12 @@ local OPTIONS_THRESHOLD_MOXIE_ROW_Y = OPTIONS_THRESHOLD_UA_ROW_Y - OPTIONS_ROW_H
 local OPTIONS_THRESHOLD_FV_ROW_Y = OPTIONS_THRESHOLD_MOXIE_ROW_Y - OPTIONS_ROW_HEIGHT
 local OPTIONS_THRESHOLD_RESET_Y = OPTIONS_THRESHOLD_FV_ROW_Y - OPTIONS_ROW_HEIGHT
 
+-- Everything from here down has a row count only known at refresh time (the
+-- tracked-currency list, the character-mute list, and the profession-mute
+-- list), so their start positions are computed in RefreshOptions rather than
+-- as fixed constants -- each section's header anchors to the bottom of
+-- whatever rendered above it.
 local OPTIONS_FIRST_ROW_Y = OPTIONS_THRESHOLD_RESET_Y - OPTIONS_ROW_HEIGHT - OPTIONS_SECTION_GAP
-
--- Tracked-row scroll list, sized smaller than before (was 260) to leave room
--- for the character-mute section below it on the same canvas.
-local OPTIONS_SCROLL_WIDTH = 500
-local OPTIONS_SCROLL_HEIGHT = 160
-
--- Character-mute section: a header and its own scroll list, below the
--- tracked-row list rather than merged into it -- muting an alt out of the
--- Knowledge Points roster forever is a different action from hiding one row.
-local OPTIONS_CHAR_HEADER_Y = OPTIONS_FIRST_ROW_Y - OPTIONS_SCROLL_HEIGHT - OPTIONS_SECTION_GAP
-local OPTIONS_CHAR_SCROLL_Y = OPTIONS_CHAR_HEADER_Y - OPTIONS_HEADER_HEIGHT
-local OPTIONS_CHAR_SCROLL_HEIGHT = 100
 
 local optionsCategory
 
@@ -58,57 +73,58 @@ local function CreateSettingField(parent, y, labelText)
     return editBox
 end
 
-local function EnsureOptionRow(index)
-    local row = ns.optionsPanel.rows[index]
+-- Shared shape for all three row lists below: a checkbox plus label, parented
+-- to the shared scroll content and positioned explicitly by the caller (each
+-- list's start Y depends on how tall the list above it turned out to be, so
+-- position can't be baked in here the way a single fixed-origin list could).
+local function EnsureListRow(pool, index, frameNamePrefix, onClick)
+    local row = pool[index]
     if not row then
-        -- Parented to the scroll frame's content child, not the panel: rows
-        -- need to scroll with the list, not sit fixed against the canvas.
-        row = CreateFrame("CheckButton", "MoxieTrackerOption" .. index,
-            ns.optionsPanel.rowsContent, "UICheckButtonTemplate")
+        row = CreateFrame("CheckButton", frameNamePrefix .. index, ns.optionsPanel.content, "UICheckButtonTemplate")
         row:SetSize(24, 24)
-        row:SetPoint("TOPLEFT", ns.optionsPanel.rowsContent, "TOPLEFT", 0, -((index - 1) * OPTIONS_ROW_HEIGHT))
-
-        -- An explicit label rather than the template's own text region, whose
-        -- name has moved between expansions.
         row.label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
         row.label:SetPoint("LEFT", row, "RIGHT", 4, 0)
-
-        row:SetScript("OnClick", function(self)
-            ns.SetHidden(self.entryKey, not self:GetChecked())
-            if ns.frame:IsShown() then
-                ns.UpdateDisplay()
-            end
-        end)
-
-        ns.optionsPanel.rows[index] = row
+        row:SetScript("OnClick", onClick)
+        pool[index] = row
     end
     return row
+end
+
+local function PositionRow(row, y)
+    row:ClearAllPoints()
+    row:SetPoint("TOPLEFT", ns.optionsPanel.content, "TOPLEFT", 0, y)
+end
+
+local function EnsureOptionRow(index)
+    return EnsureListRow(ns.optionsPanel.rows, index, "MoxieTrackerOption", function(self)
+        ns.SetHidden(self.entryKey, not self:GetChecked())
+        if ns.frame:IsShown() then
+            ns.UpdateDisplay()
+        end
+    end)
 end
 
 -- Same shape as EnsureOptionRow above, but for the character-mute list: a
 -- muted character is dropped from the Knowledge Points roster everywhere,
 -- not just this row's checkbox.
 local function EnsureCharacterRow(index)
-    local row = ns.optionsPanel.charRows[index]
-    if not row then
-        row = CreateFrame("CheckButton", "MoxieTrackerCharacterOption" .. index,
-            ns.optionsPanel.charRowsContent, "UICheckButtonTemplate")
-        row:SetSize(24, 24)
-        row:SetPoint("TOPLEFT", ns.optionsPanel.charRowsContent, "TOPLEFT", 0, -((index - 1) * OPTIONS_ROW_HEIGHT))
+    return EnsureListRow(ns.optionsPanel.charRows, index, "MoxieTrackerCharacterOption", function(self)
+        ns.SetCharacterMuted(self.entryKey, not self:GetChecked())
+        if ns.frame:IsShown() then
+            ns.UpdateDisplay()
+        end
+    end)
+end
 
-        row.label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        row.label:SetPoint("LEFT", row, "RIGHT", 4, 0)
-
-        row:SetScript("OnClick", function(self)
-            ns.SetCharacterMuted(self.entryKey, not self:GetChecked())
-            if ns.frame:IsShown() then
-                ns.UpdateDisplay()
-            end
-        end)
-
-        ns.optionsPanel.charRows[index] = row
-    end
-    return row
+-- Same shape again, one level more specific: mutes a single profession for a
+-- single character rather than the whole character.
+local function EnsureProfessionRow(index)
+    return EnsureListRow(ns.optionsPanel.professionRows, index, "MoxieTrackerProfessionOption", function(self)
+        ns.SetKnowledgeProfessionMuted(self.characterKey, self.professionName, not self:GetChecked())
+        if ns.frame:IsShown() then
+            ns.UpdateDisplay()
+        end
+    end)
 end
 
 function ns.RefreshOptions()
@@ -123,6 +139,9 @@ function ns.RefreshOptions()
     ns.optionsPanel.moxieEditBox:SetText(tostring(ns.GetThreshold("moxie")))
     ns.optionsPanel.fusedVitalityEditBox:SetText(tostring(ns.GetThreshold("fusedVitality")))
 
+    ----------------------------------------------------------------------
+    -- Tracked-currency rows.
+    ----------------------------------------------------------------------
     local tracked = ns.CollectTracked(true)
 
     for _, row in ipairs(ns.optionsPanel.rows) do
@@ -134,31 +153,33 @@ function ns.RefreshOptions()
         row.entryKey = entry.key
         row.label:SetText(entry.name)
         row:SetChecked(not entry.hidden)
+        PositionRow(row, OPTIONS_FIRST_ROW_Y - ((index - 1) * OPTIONS_ROW_HEIGHT))
         row:Show()
     end
 
-    -- Content height drives whether the scroll frame's bar is usable at all;
-    -- floored at 1 rather than 0, since a zero-height scroll child is what
-    -- some client versions treat as "not scrollable" even once rows appear.
-    ns.optionsPanel.rowsContent:SetHeight(math.max(1, #tracked * OPTIONS_ROW_HEIGHT))
-
-    -- A ScrollFrame does not reliably recompute its scroll range on its own
-    -- when its scroll child is resized after creation; without this, rows
-    -- added after the initial (1px) scroll child height can end up outside
-    -- the range the scroll frame thinks is scrollable and never draw.
-    ns.optionsPanel.scrollFrame:UpdateScrollChildRect()
-    ns.optionsPanel.scrollFrame:SetVerticalScroll(0)
-
     if #tracked == 0 then
+        ns.optionsPanel.empty:ClearAllPoints()
+        ns.optionsPanel.empty:SetPoint("TOPLEFT", ns.optionsPanel.content, "TOPLEFT", 0, OPTIONS_FIRST_ROW_Y)
         ns.optionsPanel.empty:Show()
     else
         ns.optionsPanel.empty:Hide()
     end
 
-    -- Character mute list. includeMuted=true so a muted character stays
+    local trackedRowCount = math.max(#tracked, 1) -- reserve one row of space for the "nothing to configure" message
+    local trackedListBottomY = OPTIONS_FIRST_ROW_Y - (trackedRowCount * OPTIONS_ROW_HEIGHT)
+
+    ----------------------------------------------------------------------
+    -- Character-mute rows. includeMuted=true so a muted character stays
     -- listed (unchecked) instead of disappearing along with its row -- the
     -- only way to un-mute it. The current character is always in this list,
     -- even at 0 points, so it can be pre-muted before it earns any.
+    ----------------------------------------------------------------------
+    local charHeaderY = trackedListBottomY - OPTIONS_SECTION_GAP
+    ns.optionsPanel.charHeader:ClearAllPoints()
+    ns.optionsPanel.charHeader:SetPoint("TOPLEFT", ns.optionsPanel.content, "TOPLEFT", 0, charHeaderY)
+
+    local charRowsY = charHeaderY - OPTIONS_HEADER_HEIGHT
+
     local roster = ns.CollectKnowledgeRoster(true)
 
     for _, row in ipairs(ns.optionsPanel.charRows) do
@@ -170,12 +191,62 @@ function ns.RefreshOptions()
         row.entryKey = entry.key
         row.label:SetText(entry.name)
         row:SetChecked(not entry.muted)
+        PositionRow(row, charRowsY - ((index - 1) * OPTIONS_ROW_HEIGHT))
         row:Show()
     end
 
-    ns.optionsPanel.charRowsContent:SetHeight(math.max(1, #roster * OPTIONS_ROW_HEIGHT))
-    ns.optionsPanel.charScrollFrame:UpdateScrollChildRect()
-    ns.optionsPanel.charScrollFrame:SetVerticalScroll(0)
+    local charRowCount = math.max(#roster, 1)
+    local charListBottomY = charRowsY - (charRowCount * OPTIONS_ROW_HEIGHT)
+
+    ----------------------------------------------------------------------
+    -- Character-profession-mute rows: same idea one level deeper, muting a
+    -- single profession for a single character instead of the whole
+    -- character. See ns.CollectKnowledgeProfessionRoster for why a muted
+    -- character doesn't also appear here.
+    ----------------------------------------------------------------------
+    local professionHeaderY = charListBottomY - OPTIONS_SECTION_GAP
+    ns.optionsPanel.professionHeader:ClearAllPoints()
+    ns.optionsPanel.professionHeader:SetPoint("TOPLEFT", ns.optionsPanel.content, "TOPLEFT", 0, professionHeaderY)
+
+    local professionRowsY = professionHeaderY - OPTIONS_HEADER_HEIGHT
+
+    local professionList = ns.CollectKnowledgeProfessionRoster()
+
+    for _, row in ipairs(ns.optionsPanel.professionRows) do
+        row:Hide()
+    end
+
+    for index, entry in ipairs(professionList) do
+        local row = EnsureProfessionRow(index)
+        row.characterKey = entry.characterKey
+        row.professionName = entry.professionName
+        row.label:SetText(string.format("%s \226\128\148 %s", entry.characterName, entry.professionName))
+        row:SetChecked(not entry.muted)
+        PositionRow(row, professionRowsY - ((index - 1) * OPTIONS_ROW_HEIGHT))
+        row:Show()
+    end
+
+    if #professionList == 0 then
+        ns.optionsPanel.professionEmpty:ClearAllPoints()
+        ns.optionsPanel.professionEmpty:SetPoint("TOPLEFT", ns.optionsPanel.content, "TOPLEFT", 0, professionRowsY)
+        ns.optionsPanel.professionEmpty:Show()
+    else
+        ns.optionsPanel.professionEmpty:Hide()
+    end
+
+    local professionRowCount = math.max(#professionList, 1)
+    local professionListBottomY = professionRowsY - (professionRowCount * OPTIONS_ROW_HEIGHT)
+
+    -- Content height drives whether the scroll frame's bar is usable at all;
+    -- floored at 1 rather than 0, since a zero-height scroll child is what
+    -- some client versions treat as "not scrollable" even once rows appear.
+    ns.optionsPanel.content:SetHeight(math.max(1, -professionListBottomY + OPTIONS_BOTTOM_MARGIN))
+
+    -- A ScrollFrame does not reliably recompute its scroll range on its own
+    -- when its scroll child is resized after creation; without this, rows
+    -- added after the initial (1px) scroll child height can end up outside
+    -- the range the scroll frame thinks is scrollable and never draw.
+    ns.optionsPanel.scrollFrame:UpdateScrollChildRect()
 end
 
 local function CreateOptionsPanel()
@@ -183,6 +254,7 @@ local function CreateOptionsPanel()
     panel.name = "MoxieTracker"
     panel.rows = {}
     panel.charRows = {}
+    panel.professionRows = {}
 
     local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, -16)
@@ -194,9 +266,32 @@ local function CreateOptionsPanel()
     subtitle:SetJustifyH("LEFT")
     subtitle:SetText("Uncheck a row to hide it from the tracker. Choices apply to the whole account.")
 
-    local loginCheckbox = CreateFrame("CheckButton", "MoxieTrackerLoginMessageOption", panel, "UICheckButtonTemplate")
+    -- Everything else lives inside this single scroll region -- see the
+    -- comment above OPTIONS_ROW_HEIGHT for why a fixed layout wasn't enough,
+    -- and for why this is an explicit SetSize rather than anchored to the
+    -- panel's own edges.
+    local scrollFrame = CreateFrame("ScrollFrame", "MoxieTrackerOptionsScrollFrame", panel,
+        "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, -60)
+    scrollFrame:SetSize(OPTIONS_CONTENT_WIDTH, OPTIONS_CONTENT_HEIGHT)
+    panel.scrollFrame = scrollFrame
+
+    -- No SetPoint calls here: a ScrollFrame manages its scroll child's
+    -- anchoring internally once SetScrollChild is called. Manually anchoring
+    -- the child first (as this used to) fights that internal positioning and
+    -- loses -- confirmed in-game via GetLeft()/GetTop() both reading nil on
+    -- the scroll child and everything anchored to it, despite each frame
+    -- otherwise reporting a normal size and Show/IsVisible state. An explicit
+    -- SetSize before SetScrollChild is the correct, sufficient way to give
+    -- the child a shape; the scroll frame positions it from there.
+    local content = CreateFrame("Frame", nil, scrollFrame)
+    content:SetSize(OPTIONS_CONTENT_WIDTH, 1)
+    scrollFrame:SetScrollChild(content)
+    panel.content = content
+
+    local loginCheckbox = CreateFrame("CheckButton", "MoxieTrackerLoginMessageOption", content, "UICheckButtonTemplate")
     loginCheckbox:SetSize(24, 24)
-    loginCheckbox:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, OPTIONS_LOGIN_ROW_Y)
+    loginCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", 0, OPTIONS_LOGIN_ROW_Y)
     loginCheckbox.label = loginCheckbox:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     loginCheckbox.label:SetPoint("LEFT", loginCheckbox, "RIGHT", 4, 0)
     loginCheckbox.label:SetText("Show version message at login")
@@ -207,10 +302,10 @@ local function CreateOptionsPanel()
 
     -- Separate from muting individual characters: this is the blunt "I don't
     -- want this second window at all" off switch, independent of the roster.
-    local knowledgeWindowCheckbox = CreateFrame("CheckButton", "MoxieTrackerKnowledgeWindowOption", panel,
+    local knowledgeWindowCheckbox = CreateFrame("CheckButton", "MoxieTrackerKnowledgeWindowOption", content,
         "UICheckButtonTemplate")
     knowledgeWindowCheckbox:SetSize(24, 24)
-    knowledgeWindowCheckbox:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, OPTIONS_KNOWLEDGE_WINDOW_ROW_Y)
+    knowledgeWindowCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", 0, OPTIONS_KNOWLEDGE_WINDOW_ROW_Y)
     knowledgeWindowCheckbox.label = knowledgeWindowCheckbox:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     knowledgeWindowCheckbox.label:SetPoint("LEFT", knowledgeWindowCheckbox, "RIGHT", 4, 0)
     knowledgeWindowCheckbox.label:SetText("Show Knowledge Points window")
@@ -222,15 +317,15 @@ local function CreateOptionsPanel()
     end)
     panel.knowledgeWindowCheckbox = knowledgeWindowCheckbox
 
-    local positionHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    positionHeader:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, OPTIONS_POSITION_HEADER_Y)
+    local positionHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    positionHeader:SetPoint("TOPLEFT", content, "TOPLEFT", 0, OPTIONS_POSITION_HEADER_Y)
     positionHeader:SetText("Position")
 
     -- Offsets are signed (the default vertical offset is -440), so these are
     -- plain EditBoxes with manual tonumber() validation rather than
     -- SetNumeric(true), which does not allow a minus sign.
-    local xEditBox = CreateSettingField(panel, OPTIONS_POSITION_X_ROW_Y, "Horizontal offset")
-    local yEditBox = CreateSettingField(panel, OPTIONS_POSITION_Y_ROW_Y, "Vertical offset")
+    local xEditBox = CreateSettingField(content, OPTIONS_POSITION_X_ROW_Y, "Horizontal offset")
+    local yEditBox = CreateSettingField(content, OPTIONS_POSITION_Y_ROW_Y, "Vertical offset")
     panel.xEditBox = xEditBox
     panel.yEditBox = yEditBox
 
@@ -262,9 +357,9 @@ local function CreateOptionsPanel()
         box:SetScript("OnEditFocusLost", CommitOffset)
     end
 
-    local resetPositionButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    local resetPositionButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
     resetPositionButton:SetSize(120, 22)
-    resetPositionButton:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, OPTIONS_POSITION_RESET_Y)
+    resetPositionButton:SetPoint("TOPLEFT", content, "TOPLEFT", 0, OPTIONS_POSITION_RESET_Y)
     resetPositionButton:SetText("Reset position")
     resetPositionButton:SetScript("OnClick", function()
         ns.ResetPosition()
@@ -273,16 +368,16 @@ local function CreateOptionsPanel()
         yEditBox:SetText(tostring(y))
     end)
 
-    local thresholdHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    thresholdHeader:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, OPTIONS_THRESHOLD_HEADER_Y)
+    local thresholdHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    thresholdHeader:SetPoint("TOPLEFT", content, "TOPLEFT", 0, OPTIONS_THRESHOLD_HEADER_Y)
     thresholdHeader:SetText("Color thresholds")
 
     -- Thresholds are always non-negative, so SetNumeric(true) is enough
     -- validation on its own; a cleared box (empty string) still needs the
     -- same tonumber() nil-check as the position fields.
-    local unalloyedEditBox = CreateSettingField(panel, OPTIONS_THRESHOLD_UA_ROW_Y, "Unalloyed Abundance")
-    local moxieEditBox = CreateSettingField(panel, OPTIONS_THRESHOLD_MOXIE_ROW_Y, "Moxie")
-    local fusedVitalityEditBox = CreateSettingField(panel, OPTIONS_THRESHOLD_FV_ROW_Y, "Fused Vitality")
+    local unalloyedEditBox = CreateSettingField(content, OPTIONS_THRESHOLD_UA_ROW_Y, "Unalloyed Abundance")
+    local moxieEditBox = CreateSettingField(content, OPTIONS_THRESHOLD_MOXIE_ROW_Y, "Moxie")
+    local fusedVitalityEditBox = CreateSettingField(content, OPTIONS_THRESHOLD_FV_ROW_Y, "Fused Vitality")
     for _, box in ipairs({ unalloyedEditBox, moxieEditBox, fusedVitalityEditBox }) do
         box:SetNumeric(true)
     end
@@ -322,9 +417,9 @@ local function CreateOptionsPanel()
         end)
     end
 
-    local resetThresholdsButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    local resetThresholdsButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
     resetThresholdsButton:SetSize(120, 22)
-    resetThresholdsButton:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, OPTIONS_THRESHOLD_RESET_Y)
+    resetThresholdsButton:SetPoint("TOPLEFT", content, "TOPLEFT", 0, OPTIONS_THRESHOLD_RESET_Y)
     resetThresholdsButton:SetText("Reset thresholds")
     resetThresholdsButton:SetScript("OnClick", function()
         MoxieTrackerDB.thresholds = nil
@@ -336,65 +431,31 @@ local function CreateOptionsPanel()
         end
     end)
 
-    -- The row-visibility checkboxes scroll: the Position and Threshold
-    -- sections above already push the fixed header content close to a full
-    -- canvas, and the keyword fallback can add rows beyond what any fixed
-    -- layout could guarantee fits. UIPanelScrollFrameTemplate brings its own
-    -- scrollbar, so there is no custom scroll code to maintain.
-    --
-    -- Both dimensions are explicit rather than anchored to the options
-    -- panel's edges: a canvas settings category is not guaranteed to stretch
-    -- the frame it is given to fill the available area, and panel:GetWidth()
-    -- confirmed 0 in-game -- an unresolved anchor against an unsized panel
-    -- silently produces a zero-size (and so invisible, since a ScrollFrame
-    -- actually clips to its own bounds, unlike a plain Frame) scroll frame
-    -- rather than an error. Other elements on this panel look unaffected by
-    -- the same underlying panel-sizing issue only because plain FontStrings
-    -- and CheckButtons are not clipped to their parent's bounds.
-    local scrollFrame = CreateFrame("ScrollFrame", "MoxieTrackerOptionsScrollFrame", panel,
-        "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, OPTIONS_FIRST_ROW_Y)
-    scrollFrame:SetSize(OPTIONS_SCROLL_WIDTH, OPTIONS_SCROLL_HEIGHT)
-
-    -- No SetPoint calls here: a ScrollFrame manages its scroll child's
-    -- anchoring internally once SetScrollChild is called. Manually anchoring
-    -- the child first (as this used to) fights that internal positioning and
-    -- loses -- confirmed in-game via GetLeft()/GetTop() both reading nil on
-    -- the scroll child and everything anchored to it, despite each frame
-    -- otherwise reporting a normal size and Show/IsVisible state. An explicit
-    -- SetSize before SetScrollChild is the correct, sufficient way to give
-    -- the child a shape; the scroll frame positions it from there.
-    local rowsContent = CreateFrame("Frame", nil, scrollFrame)
-    rowsContent:SetSize(OPTIONS_SCROLL_WIDTH, 1)
-    scrollFrame:SetScrollChild(rowsContent)
-    panel.scrollFrame = scrollFrame
-    panel.rowsContent = rowsContent
-
-    panel.empty = rowsContent:CreateFontString(nil, "ARTWORK", "GameFontDisable")
-    panel.empty:SetPoint("TOPLEFT", rowsContent, "TOPLEFT", 0, 0)
+    -- Tracked-row checkboxes start at OPTIONS_FIRST_ROW_Y; RefreshOptions
+    -- positions each one (row count, so start Y, isn't known until then).
+    panel.empty = content:CreateFontString(nil, "ARTWORK", "GameFontDisable")
     panel.empty:SetText("Nothing to configure yet - open a profession or log in on a character with moxie.")
     panel.empty:Hide()
 
-    local charHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    charHeader:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, OPTIONS_CHAR_HEADER_Y)
+    local charHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     charHeader:SetText("Characters")
+    panel.charHeader = charHeader
 
-    local charSubtitle = panel:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+    local charSubtitle = content:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
     charSubtitle:SetPoint("LEFT", charHeader, "RIGHT", 8, 0)
     charSubtitle:SetText("(uncheck to mute a character from the Knowledge Points list forever)")
 
-    -- Same scroll-frame setup as the tracked-row list above, and for the same
-    -- reason: an accumulating roster of alts can outgrow any fixed layout.
-    local charScrollFrame = CreateFrame("ScrollFrame", "MoxieTrackerOptionsCharScrollFrame", panel,
-        "UIPanelScrollFrameTemplate")
-    charScrollFrame:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, OPTIONS_CHAR_SCROLL_Y)
-    charScrollFrame:SetSize(OPTIONS_SCROLL_WIDTH, OPTIONS_CHAR_SCROLL_HEIGHT)
+    local professionHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    professionHeader:SetText("Character Professions")
+    panel.professionHeader = professionHeader
 
-    local charRowsContent = CreateFrame("Frame", nil, charScrollFrame)
-    charRowsContent:SetSize(OPTIONS_SCROLL_WIDTH, 1)
-    charScrollFrame:SetScrollChild(charRowsContent)
-    panel.charScrollFrame = charScrollFrame
-    panel.charRowsContent = charRowsContent
+    local professionSubtitle = content:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+    professionSubtitle:SetPoint("LEFT", professionHeader, "RIGHT", 8, 0)
+    professionSubtitle:SetText("(uncheck to mute a single profession's points for that character)")
+
+    panel.professionEmpty = content:CreateFontString(nil, "ARTWORK", "GameFontDisable")
+    panel.professionEmpty:SetText("No profession Knowledge recorded yet.")
+    panel.professionEmpty:Hide()
 
     -- Hidden until the Settings frame shows it. Also makes OnShow the single
     -- point where rows are built, rather than it having to run once here too.

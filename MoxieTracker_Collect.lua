@@ -194,6 +194,32 @@ function ns.SnapshotKnowledge()
     MoxieTrackerDB.knowledge[key] = { name = name, points = total, professions = professions }
 end
 
+-- Drops any profession muted for this character from a raw professions list
+-- (either the current character's live breakdown or a stored snapshot's) and
+-- re-sums the total from what's left, so muting a profession also removes
+-- its points from the character's displayed total rather than just hiding
+-- the line. Returns nil, nil for a nil list (the pre-breakdown legacy shape),
+-- so callers can tell "nothing to filter" apart from "filtered down to
+-- nothing". Applied here, at roster-assembly time, rather than in
+-- SnapshotKnowledge or CollectUnspentKnowledgeByProfession, so the raw data
+-- keeps accumulating in storage and un-muting a profession later doesn't
+-- need that character to log back in to reappear -- same reasoning as
+-- ns.IsCharacterMuted only being checked in this function's Add().
+local function FilterMutedProfessions(characterKey, professions)
+    if not professions then
+        return nil, nil
+    end
+    local filtered = {}
+    local total = 0
+    for _, profession in ipairs(professions) do
+        if not ns.IsKnowledgeProfessionMuted(characterKey, profession.name) then
+            table.insert(filtered, profession)
+            total = total + profession.points
+        end
+    end
+    return filtered, total
+end
+
 -- Returns the saved roster as a name-sorted array. The current character's
 -- entry is always present and always live (not the last saved snapshot), so
 -- spending or earning points mid-session doesn't look stale until the next
@@ -227,15 +253,16 @@ function ns.CollectKnowledgeRoster(includeMuted)
         table.insert(roster, { key = key, name = name, points = points, professions = professions, muted = muted })
     end
 
-    local currentProfessions = ns.CollectUnspentKnowledgeByProfession()
-    local currentTotal = 0
-    for _, profession in ipairs(currentProfessions) do
-        currentTotal = currentTotal + profession.points
-    end
+    local currentProfessions, currentTotal = FilterMutedProfessions(currentKey, ns.CollectUnspentKnowledgeByProfession())
     Add(currentKey, currentName, currentTotal, currentProfessions)
 
     for key, entry in pairs(MoxieTrackerDB.knowledge or {}) do
-        Add(key, entry.name, entry.points, entry.professions)
+        local professions, total = FilterMutedProfessions(key, entry.professions)
+        if professions then
+            Add(key, entry.name, total, professions)
+        else
+            Add(key, entry.name, entry.points, entry.professions)
+        end
     end
 
     table.sort(roster, function(a, b)
@@ -243,4 +270,47 @@ function ns.CollectKnowledgeRoster(includeMuted)
     end)
 
     return roster
+end
+
+-- Flat character+profession list for the options panel's profession-mute
+-- section, one row per profession any character has ever recorded unspent
+-- Knowledge in -- muted or not, same "show it anyway so there's a way to
+-- un-mute it" reasoning as CollectKnowledgeRoster's includeMuted. A fully
+-- muted character is skipped entirely: its roster line never renders, so
+-- per-profession controls for it would have nothing to affect.
+function ns.CollectKnowledgeProfessionRoster()
+    local currentKey, currentName = ns.GetCharacterKey()
+    local list = {}
+
+    local function AddCharacter(key, name, professions)
+        if not professions or ns.IsCharacterMuted(key) then
+            return
+        end
+        for _, profession in ipairs(professions) do
+            table.insert(list, {
+                characterKey = key,
+                characterName = name,
+                professionName = profession.name,
+                points = profession.points,
+                muted = ns.IsKnowledgeProfessionMuted(key, profession.name),
+            })
+        end
+    end
+
+    AddCharacter(currentKey, currentName, ns.CollectUnspentKnowledgeByProfession())
+
+    for key, entry in pairs(MoxieTrackerDB.knowledge or {}) do
+        if key ~= currentKey then
+            AddCharacter(key, entry.name, entry.professions)
+        end
+    end
+
+    table.sort(list, function(a, b)
+        if a.characterName == b.characterName then
+            return a.professionName < b.professionName
+        end
+        return a.characterName < b.characterName
+    end)
+
+    return list
 end
