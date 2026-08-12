@@ -8,7 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.7.0] - 2026-08-11
 
 ### Added
-- Tracks unspent profession Knowledge (summed across all eleven professions) for every character that has logged in, listed beneath the currencies with each character's name in green (#38). The roster grows automatically as you log into each character -- no rescan is needed or possible, since the addon can only see whichever character is currently logged in. The current character's total is always live rather than the last-login snapshot
+- Tracks unspent profession Knowledge for every character that has logged in, shown in its own window anchored below the main tracker rather than as a section of it, so a long roster doesn't push the currency rows around (#38). The roster grows automatically as you log into each character -- no rescan is needed or possible, since the addon can only see whichever character is currently logged in. The current character's total is always live rather than the last-login snapshot.
+- Characters with unspent points in more than one profession show a per-profession breakdown, indented under the character's name, e.g.:
+  ```
+  Tharavol
+      Engineering: 4
+      Tailoring: 2
+  ```
+  A character with points in exactly one profession still gets the same breakdown format, so a count is never ambiguous between "N total" and "N in this profession".
+- A "Characters" section in the options panel lets any character be muted out of the Knowledge Points roster permanently, independent of hiding individual currency/item rows.
+- A "Show Knowledge Points window" checkbox in the options panel hides the whole window regardless of content.
+- A real `IconTexture` (`inv_10_gearcraft_artisansmettle_color2`), replacing the placeholder coin icon.
+
+### Changed
+- A character with 0 unspent Knowledge no longer appears in the roster at all, matching how tracked currencies already hide what isn't there.
+- Character names render in white with point counts in green (previously the whole line was green).
+- `/moxie reset settings` and `/moxie status` now also cover muted characters and the Knowledge Points window's visibility.
 
 ## [1.6.0] - 2026-08-11
 
@@ -265,6 +280,8 @@ during load; that tag was removed and reused for this release.
 - The full GPL-3.0 text, replacing a truncated stub that named the license but
   omitted its terms.
 
+[1.7.0]: https://github.com/Tharavol/MoxieTracker/compare/v1.6.0...v1.7.0
+[1.6.0]: https://github.com/Tharavol/MoxieTracker/compare/v1.5.2...v1.6.0
 [1.5.1]: https://github.com/Tharavol/MoxieTracker/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/Tharavol/MoxieTracker/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/Tharavol/MoxieTracker/compare/v1.3.0...v1.4.0
