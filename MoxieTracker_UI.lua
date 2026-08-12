@@ -321,6 +321,7 @@ end
 SafeRegisterEvent("CURRENCY_DISPLAY_UPDATE")
 SafeRegisterEvent("PLAYER_ENTERING_WORLD")
 SafeRegisterEvent("PLAYER_LOGIN")
+SafeRegisterEvent("PLAYER_LOGOUT")
 SafeRegisterEvent("CURRENCY_TRANSFER_LOG_UPDATE")
 SafeRegisterEvent("TRADE_SKILL_SHOW")
 SafeRegisterEvent("TRADE_SKILL_CLOSE")
@@ -356,12 +357,20 @@ frame:SetScript("OnEvent", function(self, event, arg1)
             ns.Print("%s loaded. Type /moxie for options.", ns.GetVersion())
         end
     elseif event == "PLAYER_ENTERING_WORLD" then
-        -- The whole "accumulation" mechanism (#38): each login snapshots this
-        -- character's unspent Knowledge into the account-wide roster.
-        ns.SnapshotKnowledge()
         if self:IsShown() then
             RefreshBothWindows()
         end
+    elseif event == "PLAYER_LOGOUT" then
+        -- The whole "accumulation" mechanism (#38): snapshot this character's
+        -- unspent Knowledge into the account-wide roster as it leaves, so an
+        -- alt sees it next. Deliberately not PLAYER_ENTERING_WORLD: currency
+        -- data isn't guaranteed synced from the server the instant that event
+        -- fires (most notably right after login), and reading it that early
+        -- could persist a spurious 0 that clobbers the real total until the
+        -- next snapshot. By logout the session's currency data has settled,
+        -- and logout always happens before another character could see the
+        -- roster anyway.
+        ns.SnapshotKnowledge()
     elseif event == "TRADE_SKILL_SHOW" then
         SetCraftOpen(true)
     elseif event == "TRADE_SKILL_CLOSE" then

@@ -175,11 +175,13 @@ end
 
 -- Persists the current character's unspent Knowledge into the account-wide
 -- roster, so it stays visible while playing a different character. Called
--- on login; there is no scan of other characters, because the client cannot
--- see their state -- the roster grows one entry at a time as each alt logs
--- in, which is the whole "accumulation" mechanism the issue asks for. The
--- per-profession breakdown is saved alongside the total so another
--- character's roster entry can show it too, not just the current one's.
+-- on logout (not login -- see the PLAYER_LOGOUT handler in
+-- MoxieTracker_UI.lua for why); there is no scan of other characters,
+-- because the client cannot see their state -- the roster grows one entry
+-- at a time as each alt logs out, which is the whole "accumulation"
+-- mechanism the issue asks for. The per-profession breakdown is saved
+-- alongside the total so another character's roster entry can show it too,
+-- not just the current one's.
 function ns.SnapshotKnowledge()
     local key, name = ns.GetCharacterKey()
     local professions = ns.CollectUnspentKnowledgeByProfession()
@@ -193,11 +195,11 @@ function ns.SnapshotKnowledge()
 end
 
 -- Returns the saved roster as a name-sorted array. The current character's
--- entry is always present and always live (not the last login snapshot), so
+-- entry is always present and always live (not the last saved snapshot), so
 -- spending or earning points mid-session doesn't look stale until the next
--- login; every other character reflects whatever their last login saw. A
+-- logout; every other character reflects whatever their last logout saw. A
 -- character snapshotted before the per-profession breakdown existed carries
--- no `professions` field until their next login re-snapshots it -- display
+-- no `professions` field until their next logout re-snapshots it -- display
 -- code treats that the same as a single-profession character (a plain
 -- "Name: total" line) rather than erroring on the missing field.
 --
