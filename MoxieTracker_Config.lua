@@ -95,6 +95,41 @@ ns.KNOWLEDGE_PROFESSIONS = {
     { id = 3160, name = "Tailoring" },
 }
 
+-- Crafter's Concentration (#40) has no static currency ID to list here the
+-- way Moxie and Knowledge do: it is resolved live per profession via
+-- C_TradeSkillUI.GetConcentrationCurrencyID(skillLineID), confirmed against
+-- derfloh205/CraftSim's ConcentrationTracker.lua/ConcentrationData.lua
+-- (see TODO.md's Sources section). Only the 8 crafting professions carry
+-- Concentration -- the 3 gathering professions among MoxieTracker's eleven
+-- (Herbalism, Mining, Skinning) do not, same exclusion CraftSim's
+-- GATHERING_PROFESSIONS check makes.
+--
+-- Keyed by `enum` (Enum.Profession, the client's own locale-independent
+-- profession identifier -- confirmed as the `.profession` field on
+-- C_TradeSkillUI.GetProfessionInfoBySkillLineID's return value via
+-- Blizzard's own TradeSkillUITypesDocumentation.lua) rather than by the
+-- struct's `.professionName` field, which is localized display text and
+-- would silently never match this list on a non-English client -- the same
+-- "matched by ID, not name, so it works on any locale" principle
+-- MOXIE_IDS/KNOWLEDGE_PROFESSIONS already follow. `name` is MoxieTracker's
+-- own stable English label, used as the storage/display key throughout,
+-- same role KNOWLEDGE_PROFESSIONS' `name` field plays.
+ns.CONCENTRATION_PROFESSIONS = {
+    { enum = Enum.Profession.Alchemy, name = "Alchemy" },
+    { enum = Enum.Profession.Blacksmithing, name = "Blacksmithing" },
+    { enum = Enum.Profession.Enchanting, name = "Enchanting" },
+    { enum = Enum.Profession.Engineering, name = "Engineering" },
+    { enum = Enum.Profession.Inscription, name = "Inscription" },
+    { enum = Enum.Profession.Jewelcrafting, name = "Jewelcrafting" },
+    { enum = Enum.Profession.Leatherworking, name = "Leatherworking" },
+    { enum = Enum.Profession.Tailoring, name = "Tailoring" },
+}
+
+ns.CONCENTRATION_PROFESSION_BY_ENUM = {}
+for _, profession in ipairs(ns.CONCENTRATION_PROFESSIONS) do
+    ns.CONCENTRATION_PROFESSION_BY_ENUM[profession.enum] = profession.name
+end
+
 -- Bag items, not currencies: these come from C_Item rather than C_CurrencyInfo
 -- and are counted across bags, bank, and reagent bank. Always listed, the same
 -- way ALWAYS_SHOWN_IDS is, so a row at zero reads as "none" rather than
@@ -135,6 +170,18 @@ local DEFAULT_THRESHOLDS = {
     fusedVitality = 20,
 }
 
+-- Concentration (#40) gets its own threshold per crafting profession, unlike
+-- Moxie's single shared threshold across all eleven -- confirmed with the
+-- user, since how much Concentration is "enough" varies by profession.
+-- Flat keys in the same DEFAULT_THRESHOLDS/MoxieTrackerDB.thresholds table
+-- rather than a parallel structure, so the options panel's existing "Reset
+-- thresholds" button resets these for free. Every profession defaults to
+-- 300; only Alchemy's default was specified, so the rest start at the same
+-- value until tuned individually.
+for _, profession in ipairs(ns.CONCENTRATION_PROFESSIONS) do
+    DEFAULT_THRESHOLDS["concentration:" .. profession.name] = 300
+end
+
 function ns.GetThreshold(key)
     local thresholds = MoxieTrackerDB and MoxieTrackerDB.thresholds
     local value = thresholds and thresholds[key]
@@ -165,6 +212,27 @@ ns.ITEM_QUANTITY_COLOR = {
         return quantity >= ns.GetThreshold("fusedVitality") and ns.GREEN or ns.YELLOW
     end,
 }
+
+-- Concentration coloring (#40): red at the currency's real cap
+-- (maxQuantity, read live from C_CurrencyInfo rather than a hardcoded
+-- 1000 -- the same "tied to the actual game mechanic" reasoning as Shard
+-- of Dundun's fixed band above) always wins, then green at the
+-- profession's own editable threshold, yellow otherwise. maxQuantity of 0
+-- or nil means the currency has not been discovered yet (see
+-- ns.CONCENTRATION_PROFESSIONS above), which has nothing sensible to
+-- color against.
+function ns.GetConcentrationColor(profession, quantity, maxQuantity)
+    if not maxQuantity or maxQuantity <= 0 then
+        return ns.WHITE
+    end
+    if quantity >= maxQuantity then
+        return ns.RED
+    end
+    if quantity >= ns.GetThreshold("concentration:" .. profession) then
+        return ns.GREEN
+    end
+    return ns.YELLOW
+end
 
 -- Stable identity for a row, used as the key for the show/hide setting. IDs are
 -- preferred because names are localized; the name form only ever applies to an
@@ -231,21 +299,111 @@ function ns.SetKnowledgeProfessionMuted(characterKey, professionName, muted)
     end
 end
 
--- Offset from the crafting window's TOPRIGHT corner. The panel hangs off the
--- right edge, dropped down the side. Taken from a placement verified in-game
--- rather than guessed.
-local DEFAULT_OFFSET_X = 4
-local DEFAULT_OFFSET_Y = -440
+-- Concentration muting (#40): the exact same whole-character/per-profession
+-- pair as Knowledge's above, just against Concentration's own
+-- mutedConcentrationCharacters/mutedConcentrationProfessions tables, so
+-- muting a character's (or one profession's) Concentration never touches
+-- their Knowledge mute state, and vice versa.
+function ns.IsConcentrationCharacterMuted(key)
+    return MoxieTrackerDB.mutedConcentrationCharacters ~= nil
+        and MoxieTrackerDB.mutedConcentrationCharacters[key] == true
+end
 
-function ns.GetOffset()
+function ns.SetConcentrationCharacterMuted(key, muted)
+    if muted then
+        MoxieTrackerDB.mutedConcentrationCharacters = MoxieTrackerDB.mutedConcentrationCharacters or {}
+        MoxieTrackerDB.mutedConcentrationCharacters[key] = true
+    elseif MoxieTrackerDB.mutedConcentrationCharacters then
+        MoxieTrackerDB.mutedConcentrationCharacters[key] = nil
+    end
+end
+
+function ns.IsConcentrationProfessionMuted(characterKey, professionName)
+    local muted = MoxieTrackerDB.mutedConcentrationProfessions
+    return muted ~= nil and muted[characterKey] ~= nil and muted[characterKey][professionName] == true
+end
+
+function ns.SetConcentrationProfessionMuted(characterKey, professionName, muted)
+    if muted then
+        MoxieTrackerDB.mutedConcentrationProfessions = MoxieTrackerDB.mutedConcentrationProfessions or {}
+        MoxieTrackerDB.mutedConcentrationProfessions[characterKey] =
+            MoxieTrackerDB.mutedConcentrationProfessions[characterKey] or {}
+        MoxieTrackerDB.mutedConcentrationProfessions[characterKey][professionName] = true
+    elseif MoxieTrackerDB.mutedConcentrationProfessions
+        and MoxieTrackerDB.mutedConcentrationProfessions[characterKey] then
+        MoxieTrackerDB.mutedConcentrationProfessions[characterKey][professionName] = nil
+    end
+end
+
+-- Offset from the crafting window's TOPRIGHT corner, one entry per window
+-- (#40 -- previously a single MoxieTrackerDB.offsetX/Y for the main window
+-- only). Only "main" has a numeric default: it hangs off the crafting
+-- window's right edge at a placement verified in-game. Knowledge and
+-- Concentration have no numeric default here -- until dragged, they stay
+-- anchored beneath the window above them (a live SetPoint relationship set
+-- up in the UI file), which this function cannot express since it never
+-- touches a frame.
+local WINDOW_OFFSET_DEFAULTS = {
+    main = { x = 4, y = -440 },
+}
+
+function ns.GetOffset(windowKey)
     -- Called from the UI file's file-scope ApplyAnchor(), which runs before
     -- ADDON_LOADED has had a chance to initialize MoxieTrackerDB. SavedVariables
     -- are only guaranteed populated once ADDON_LOADED fires for this addon; see
     -- the UI file's ADDON_LOADED handler for the real initialization.
-    local x = MoxieTrackerDB and MoxieTrackerDB.offsetX
-    local y = MoxieTrackerDB and MoxieTrackerDB.offsetY
-    if type(x) ~= "number" or type(y) ~= "number" then
-        return DEFAULT_OFFSET_X, DEFAULT_OFFSET_Y
+    local windows = MoxieTrackerDB and MoxieTrackerDB.windows
+    local stored = windows and windows[windowKey]
+    local x = stored and stored.offsetX
+    local y = stored and stored.offsetY
+    if type(x) == "number" and type(y) == "number" then
+        return x, y
     end
-    return x, y
+    local default = WINDOW_OFFSET_DEFAULTS[windowKey]
+    if default then
+        return default.x, default.y
+    end
+    return nil, nil
+end
+
+function ns.SetOffset(windowKey, x, y)
+    MoxieTrackerDB.windows = MoxieTrackerDB.windows or {}
+    MoxieTrackerDB.windows[windowKey] = { offsetX = x, offsetY = y }
+end
+
+function ns.ClearOffset(windowKey)
+    if MoxieTrackerDB.windows then
+        MoxieTrackerDB.windows[windowKey] = nil
+    end
+end
+
+-- One-time upgrade path for the pre-#40 single offsetX/offsetY pair (main
+-- window only) into windows.main.
+function ns.MigrateWindowOffset()
+    if type(MoxieTrackerDB.offsetX) == "number" and type(MoxieTrackerDB.offsetY) == "number" then
+        ns.SetOffset("main", MoxieTrackerDB.offsetX, MoxieTrackerDB.offsetY)
+    end
+    MoxieTrackerDB.offsetX = nil
+    MoxieTrackerDB.offsetY = nil
+end
+
+-- Duration formatting for Concentration's "time until cap" (#40). nil or
+-- <= 0 means already at cap (or not regenerating at all, e.g. an
+-- undiscovered currency); otherwise days only show once there is at least
+-- one, matching a Concentration cap that takes several hours to reach from
+-- zero but never multiple days at the per-point recharge rates seen so far.
+function ns.FormatDuration(seconds)
+    if not seconds or seconds <= 0 then
+        return "at cap"
+    end
+    local totalMinutes = math.floor(seconds / 60)
+    local days = math.floor(totalMinutes / 1440)
+    local hours = math.floor((totalMinutes % 1440) / 60)
+    local minutes = totalMinutes % 60
+    if days > 0 then
+        return string.format("%dd %dh", days, hours)
+    elseif hours > 0 then
+        return string.format("%dh %dm", hours, minutes)
+    end
+    return string.format("%dm", minutes)
 end

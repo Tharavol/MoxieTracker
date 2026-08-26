@@ -1,6 +1,6 @@
 # MoxieTracker
 
-MoxieTracker is a World of Warcraft addon for Retail / Midnight that displays the current character's Artisan Moxie, Shard of Dundun, and Unalloyed Abundance currency values, plus the Fused Vitality item count, in a small movable window. The panel appears automatically when the crafting window opens and hides again when it closes.
+MoxieTracker is a World of Warcraft addon for Retail / Midnight that displays the current character's Artisan Moxie, Shard of Dundun, and Unalloyed Abundance currency values, plus the Fused Vitality item count, in a small movable window, with a Knowledge Points roster and a Concentration roster in their own windows beneath it. The main panel appears automatically when the crafting window opens and hides again when it closes.
 
 ## Features
 
@@ -8,12 +8,14 @@ MoxieTracker is a World of Warcraft addon for Retail / Midnight that displays th
 - Tracks Fused Vitality (item 245345), counted across bags, bank, and reagent bank
 - Shard of Dundun, Unalloyed Abundance, and Fused Vitality always show, even at zero; moxie rows appear only for professions the character actually has
 - Any row can be hidden from the options panel, under Options > AddOns > MoxieTracker or `/moxie options`
-- Remembers one panel position across the whole account
 - Colors each count against its own thresholds: Shard of Dundun is green at 6 and red at 7-8, Unalloyed Abundance is green at 800 or more, Moxie is green at 600 or more, Fused Vitality is green at 20 or more, yellow otherwise
 - Docks a compact, draggable panel to the top-right of the crafting window, shown only while that window is open
 - Displays the same tooltip information as the default currency UI when hovering over a line
 - Prints the addon version to chat at login (toggle from the options panel) and shows it in the options panel title
 - Tracks unspent profession Knowledge (summed across all eleven professions) for every character that has logged in, listed beneath the currencies with each character's name in green. Builds up automatically as you log into each character; the current character's total is always live
+- Tracks Crafter's Concentration for every character that has logged in, one row per crafting profession with a projected time until it reaches its cap; regenerates in real time, so an offline character's row is projected forward from its last login rather than shown stale. Colored per profession (default green at 300, editable) with red at the real cap
+- All three windows (main panel, Knowledge Points, Concentration) are independently movable and remember their own position across the whole account
+- Either roster can mute a whole character or just one of their professions, from its own section in the options panel
 
 ## Slash commands
 
@@ -23,8 +25,8 @@ MoxieTracker is a World of Warcraft addon for Retail / Midnight that displays th
 - `/moxie pin` - keep the panel visible even with no profession open
 - `/moxie debug [on|off]` - toggle or set debug logging
 - `/moxie debug dump` - print the anchor state, every tracked currency and item ID with its quantity, the hidden rows, then every currency with a nonzero quantity
-- `/moxie reset position` - move the panel back to the crafting window's top-right corner
-- `/moxie reset settings` - restore hidden rows, pin state, thresholds and debug logging to defaults
+- `/moxie reset position` - move all three windows back to their default positions
+- `/moxie reset settings` - restore hidden rows, muted characters/professions, pin state, thresholds and debug logging to defaults
 - `/moxie status` - show current settings
 - `/moxie version` - show the addon version
 - `/moxie help` - list all commands
@@ -50,6 +52,7 @@ Release history is in [CHANGELOG.md](CHANGELOG.md).
 - Created by Tharavol
 - Initial scaffold assisted by GitHub Copilot
 - Midnight API fixes, crafting window integration, and currency thresholds by Claude Opus 5 (Anthropic), working through Claude Code
+- Concentration currency discovery and its regen-projection math were confirmed against [derfloh205/CraftSim](https://github.com/derfloh205/CraftSim) (MIT licensed), which already tracks Concentration; no CraftSim code is included in MoxieTracker (see TODO.md's Sources section for what was learned there)
 
 ## License
 

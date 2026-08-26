@@ -1,129 +1,101 @@
-# Knowledge points tracking (#38)
+# Concentration tracker window + independent window positions (#40)
 
-Plan for "Track unused knowledge points for all characters and make that
-visible in the tracker window beneath the existing currencies. The names
-should be visible in green and you can just accumulate that as users log in."
+Implements issue #40: a third tracker window showing every character's
+current Crafter's Concentration with a projected time to reach the cap, plus
+independently positionable/movable windows now that there are three of them
+instead of two, plus per-character/per-profession muting for both rosters.
 
 ## What the issue asks for
 
-Three distinct pieces: (1) read a character's *unspent* profession
-knowledge, (2) persist it **per character**, and (3) render a roster
-section -- not just the current character's numbers, which is what
-everything else in the addon does today.
+Two related pieces: (1) a Concentration roster window mirroring the
+Knowledge Points window's "own window, one row per character, indented
+per-profession breakdown, accumulates as alts log in" shape, with a
+projected time-to-cap per profession; (2) since that makes three tracker
+windows, each one (main Moxie panel, Knowledge Points, Concentration) needs
+its own independently stored, independently draggable position instead of
+Knowledge Points riding along beneath the main window the way it did before
+this. During planning the user also asked for per-character *and*
+per-profession muting for Concentration, in its own settings area, and for
+the existing Knowledge Points mute list to become the same nested
+character->profession shape.
 
 ## What's confirmed about the data source
 
-Per a Blizzard forum thread on this exact question, profession Knowledge
-Points are exposed the same way Moxie already is: as ordinary currencies via
-`C_CurrencyInfo.GetCurrencyInfo(currencyID)` -- no separate `C_ProfSpecs`
-unspent-points getter exists. That's good news: it's the exact same API
-shape `MOXIE_IDS` already uses, not a new integration pattern.
+Unlike Moxie and Knowledge Points, Concentration has **no static currency ID
+to hardcode**. It is resolved live, per profession, via
+`C_TradeSkillUI.GetConcentrationCurrencyID(skillLineID)`, where `skillLineID`
+comes from `C_TradeSkillUI.GetProfessionChildSkillLineID()` while that
+profession's crafting window is open. This was confirmed by reading
+derfloh205/CraftSim's `Modules/ConcentrationTracker/ConcentrationTracker.lua`
+and `Classes/ConcentrationData.lua` (MIT licensed) -- CraftSim already ships
+a working Concentration tracker, and its own constants file
+(`Util/Const.lua`) has a hardcoded ID table for Moxie but nothing equivalent
+for Concentration, confirming the dynamic-lookup requirement rather than
+just a gap in this addon's own research.
 
-**Confirmed in-game (2026-08-11):** one currency per profession, all eleven
-accounted for -- same shape as `ns.MOXIE_IDS`, just a different ID per entry:
+Also confirmed there:
 
-```lua
--- ns.KNOWLEDGE_IDS, one currency ID per profession's unspent Midnight
--- Knowledge, mirroring ns.MOXIE_IDS in MoxieTracker_Config.lua.
-ns.KNOWLEDGE_IDS = {
-    3150, -- Alchemy
-    3151, -- Blacksmithing
-    3152, -- Enchanting
-    3153, -- Engineering
-    3154, -- Herbalism
-    3155, -- Inscription
-    3156, -- Jewelcrafting
-    3157, -- Leatherworking
-    3158, -- Mining
-    3159, -- Skinning
-    3160, -- Tailoring
-}
-```
+- Only the 8 crafting professions have Concentration. Gathering professions
+  (Herbalism, Mining, Skinning, Fishing) do not -- CraftSim explicitly
+  excludes them (`CraftSim.CONST.GATHERING_PROFESSIONS`).
+- `C_CurrencyInfo.GetCurrencyInfo(currencyID)` -- the exact same call
+  MOXIE_IDS/KNOWLEDGE_PROFESSIONS already use -- returns `.maxQuantity` and
+  `.rechargingCycleDurationMS` directly. Confirmed against Blizzard's own
+  `TradeSkillUITypesDocumentation.lua` (`Gethe/wow-ui-source`) too, which is
+  also where `ProfessionInfo.professionName` (localized) vs. `.profession`
+  (the locale-independent `Enum.Profession` value) was confirmed --
+  `ns.CONCENTRATION_PROFESSIONS` in the Config file keys off `.profession`
+  for exactly this reason, matching this addon's existing "matched by ID,
+  not name, so it works on any locale" principle.
+- The projection formula (linear regen from a snapshot, capped at max) is
+  CraftSim's `ConcentrationData:GetCurrentAmount()`/`:GetTimeUntil()`. No
+  CraftSim code was copied -- MoxieTracker's `ns.ProjectConcentration` etc.
+  (`MoxieTracker_Collect.lua`) are independent implementations arrived at
+  because CraftSim's source revealed which API calls/fields exist, not by
+  translating its implementation. See the credited comments at
+  `ns.DiscoverConcentrationCurrencyID`/`ns.ProjectConcentration` in that
+  file.
 
-No separate weekly/catch-up currency showed up alongside these, so the
-"multiple knowledge currencies per profession" concern below turned out not
-to apply here -- one ID per profession is the whole picture for *unspent*
-points specifically (Myu's weekly/catch-up tracking is about progress
-toward *earning* more, a different feature this issue doesn't ask for).
+## Design decisions
 
-## The real design question: multi-character storage
-
-Everything else in MoxieTracker reads live, current-character state on
-demand (`CollectTracked()`). Knowledge points need a **roster that outlives
-the current login** -- character A's numbers have to still be visible while
-you're playing character B. Two things make this easier than it sounds:
-
-- `MoxieTrackerDB` is already account-wide (`## SavedVariables:
-  MoxieTrackerDB`, no `PerCharacter` variant), so no SavedVariables
-  restructuring is needed to share data across characters.
-- `PLAYER_ENTERING_WORLD` and `ADDON_LOADED` are already registered and
-  handled in `MoxieTracker_UI.lua`, so there's an existing hook to snapshot
-  into.
-
-## Proposed plan
-
-1. ~~Confirm the currency ID(s) in-game.~~ **Done** -- see `ns.KNOWLEDGE_IDS`
-   above.
-
-2. **Data model** -- add `MoxieTrackerDB.knowledge`, keyed by
-   `"CharacterName-RealmName"` (matching the pattern `UnitName("player")`
-   plus realm gives you), storing `{ points = <n>, lastSeen = <timestamp or
-   version> }` per character. Keep it a flat table, not nested
-   per-profession, unless step 1 shows the points genuinely don't sum
-   meaningfully across professions.
-
-3. **Collection** -- on `PLAYER_ENTERING_WORLD` (already handled), read the
-   current character's unspent knowledge and write it into the roster
-   table. This is the "accumulate as users log in" the issue describes: no
-   rescan needed for other characters, the roster just grows/updates one
-   entry at a time as each alt logs in.
-
-4. **Rendering** -- extend `MoxieTracker_UI.lua`'s `UpdateDisplay()` to
-   append a second section below the existing currency rows: a header
-   ("Knowledge Points" or similar), then one line per roster entry,
-   character name in green (`ns.GREEN`, already defined), count in the
-   existing white/threshold-colored style. Current character's own row
-   should probably reflect live data, not the last-snapshot value, to avoid
-   it looking stale while you're looking right at it.
-
-5. **Options panel** -- decide whether this needs a toggle at all (the issue
-   doesn't ask for one) versus always showing when the roster is non-empty,
-   mirroring how `ALWAYS_SHOWN_IDS` rows behave today. Probably start with
-   no toggle, matching the issue's minimal scope, and let a follow-up issue
-   add hide/show if wanted.
-
-6. **Edge cases worth deciding before writing code:**
-   - Does a deleted/renamed/faction-changed character's stale entry ever get
-     pruned, or does the roster grow forever? (MoxieTracker already has a
-     precedent for user-driven cleanup -- the hidden-rows list -- so
-     "manual remove via right-click or a reset-adjacent command" is
-     consistent with the addon's existing philosophy.)
-   - Multiple characters on the account but different servers -- realm-
-     qualify the key (per above) so two characters named the same on
-     different realms don't collide.
-   - Should the roster section respect the panel's existing
-     width-driven-by-widest-row layout, or does a long character-realm name
-     blow that out? Worth a quick look at `UpdateDisplay`'s width math
-     (`EnsureLine`/`widest` in `MoxieTracker_UI.lua`) since it's currently
-     sized only for currency-row text.
-
-7. **Tests** -- `tests/run.lua`'s stub already fakes `C_CurrencyInfo`,
-   extending it to also fake whichever knowledge currency ID(s) step 1
-   identifies gets you coverage for the collection logic the same way
-   `CollectTracked` is tested today. The roster-storage logic (character
-   keying, no pruning vs. manual removal) is pure-data and easy to unit
-   test in isolation, same style as the existing dedupe/threshold tests.
-
-## Suggested order
-
-Step 1 is done, so the blocker is clear. Steps 2-4 are a single focused PR
-(data model + collection + rendering), and 5-7 (options integration,
-edge-case handling, tests) are natural follow-up polish, similar in spirit
-to how MoxieTracker's own milestones have sequenced "make it work" before
-"make it configurable."
+- **Currency ID discovery**: cached account-wide the first time each
+  profession's crafting window opens (`TRADE_SKILL_SHOW`), not rediscovered
+  every login. A freshly installed copy shows no Concentration row for a
+  profession until that profession's window has been opened once -- the
+  same "rows only appear for what the character has actually shown you"
+  rule Moxie already follows.
+- **Window positions** (`MoxieTracker_Config.lua`'s `ns.GetOffset`/
+  `ns.SetOffset`/`ns.ClearOffset`, `MoxieTracker_UI.lua`'s
+  `ApplyWindowAnchor`): per-window now, stored under
+  `MoxieTrackerDB.windows.<main|knowledge|concentration>`. Main keeps a
+  numeric default (unchanged placement); Knowledge and Concentration have no
+  numeric default -- until dragged, they stay anchored beneath the window
+  above them via a live SetPoint, so nothing visually jumps for existing
+  users on upgrade. A one-time migration
+  (`ns.MigrateWindowOffset`) moves the old single `offsetX`/`offsetY` into
+  `windows.main`.
+- **Muting** (`ns.IsRosterEntryMuted`/`ns.SetRosterEntryMuted`): two
+  independent rosters, `mutedKnowledge` and `mutedConcentration`, each
+  supporting a whole-character mute (the `"*"` sentinel) or a per-profession
+  mute. A one-time migration (`ns.MigrateMutedCharacters`) moves the old
+  whole-character-only `mutedCharacters` (Knowledge-only) into
+  `mutedKnowledge`'s `"*"` entries.
+- **Coloring**: Concentration gets its own threshold *per profession*
+  (unlike Moxie's single shared threshold across all eleven), stored as flat
+  `"concentration:<Profession>"` keys in the existing
+  `MoxieTrackerDB.thresholds` table so the existing "Reset thresholds"
+  button covers them for free. Every profession defaults to 300. On top of
+  the threshold, quantity at or above the real cap (`maxQuantity` read live,
+  never hardcoded to 1000) always renders red, mirroring Shard of Dundun's
+  fixed-cap rule.
 
 ## Sources
 
-- [API for profession knowledge points - UI and Macro - World of Warcraft Forums](https://us.forums.blizzard.com/en/wow/t/api-for-profession-knowledge-points/2011267)
-- [Myu's Knowledge Points Tracker - World of Warcraft Addons - CurseForge](https://www.curseforge.com/wow/addons/myus-knowledge-points-tracker)
-- [11.0 Professions - Tracker - Weekly Mining Knowledge - Currency - World of Warcraft](https://www.wowhead.com/currency=3065/11-0-professions-tracker-weekly-mining-knowledge)
+- [derfloh205/CraftSim](https://github.com/derfloh205/CraftSim) (MIT
+  licensed) -- specifically `Modules/ConcentrationTracker/ConcentrationTracker.lua`
+  and `Classes/ConcentrationData.lua`, for the Concentration currency
+  discovery mechanism and the regen-projection formula. Pointed at by the
+  user during planning.
+- [Gethe/wow-ui-source](https://github.com/Gethe/wow-ui-source) --
+  `Interface/AddOns/Blizzard_APIDocumentationGenerated/TradeSkillUITypesDocumentation.lua`,
+  for the `ProfessionInfo` struct's `.profession`/`.professionName` fields.

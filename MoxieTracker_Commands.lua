@@ -17,11 +17,19 @@ end
 -- still the fastest way to see which currency IDs resolved -- just moved
 -- behind "debug dump" now that "debug" on its own is a real logging toggle.
 local function PrintDebugDump()
-    local offsetX, offsetY = ns.GetOffset()
-    ns.Print("anchor offset %.1f, %.1f (%s); crafting frame %s",
-        offsetX, offsetY,
-        (type(MoxieTrackerDB.offsetY) == "number") and "user placed" or "default",
-        ns.craftingFrame and "found" or "not loaded")
+    for _, window in ipairs({ "main", "knowledge", "concentration" }) do
+        local offsetX, offsetY = ns.GetOffset(window)
+        local windows = MoxieTrackerDB.windows
+        local placement = (windows and windows[window]) and "user placed"
+            or (offsetX and "default" or "stacked below the window above it")
+        if offsetX and offsetY then
+            ns.Print("%s window offset %.1f, %.1f (%s); crafting frame %s",
+                window, offsetX, offsetY, placement, ns.craftingFrame and "found" or "not loaded")
+        else
+            ns.Print("%s window offset: %s; crafting frame %s",
+                window, placement, ns.craftingFrame and "found" or "not loaded")
+        end
+    end
 
     -- Queried by ID so zero-quantity and undiscovered currencies still
     -- report, which the currency-list walk below cannot show.
@@ -34,6 +42,24 @@ local function PrintDebugDump()
                 info and info.name or "|cffff3333unknown|r",
                 info and tostring(info.quantity or 0) or "n/a")
         end
+    end
+
+    ns.Print("concentration currency IDs (discovered by opening each profession)")
+    local discoveredAny = false
+    for _, profession in ipairs(ns.CONCENTRATION_PROFESSIONS) do
+        local currencyID = MoxieTrackerDB.concentrationCurrencyIDs and
+            MoxieTrackerDB.concentrationCurrencyIDs[profession.name]
+        if currencyID then
+            discoveredAny = true
+            local info = C_CurrencyInfo.GetCurrencyInfo(currencyID)
+            ns.Print("  [concentration] %d %s = %s/%s",
+                currencyID, profession.name,
+                info and tostring(info.quantity or 0) or "n/a",
+                info and tostring(info.maxQuantity or 0) or "n/a")
+        end
+    end
+    if not discoveredAny then
+        ns.Print("  none yet - open a crafting profession's window to discover its currency ID")
     end
 
     ns.Print("tracked items")
@@ -104,7 +130,11 @@ local function HandleReset(arg1)
     elseif arg1 == "settings" then
         MoxieTrackerDB.hidden = nil
         MoxieTrackerDB.mutedCharacters = nil
+        MoxieTrackerDB.mutedProfessions = nil
+        MoxieTrackerDB.mutedConcentrationCharacters = nil
+        MoxieTrackerDB.mutedConcentrationProfessions = nil
         MoxieTrackerDB.hideKnowledgeWindow = nil
+        MoxieTrackerDB.hideConcentrationWindow = nil
         MoxieTrackerDB.thresholds = nil
         MoxieTrackerDB.debugLogging = nil
         ns.frame.pinned = false
@@ -129,15 +159,37 @@ local function PrintStatus()
     end
     ns.Print("hidden rows: %d", hiddenCount)
 
-    local mutedCount = 0
-    if MoxieTrackerDB.mutedCharacters then
-        for _ in pairs(MoxieTrackerDB.mutedCharacters) do
-            mutedCount = mutedCount + 1
+    -- mutedCharacters/mutedConcentrationCharacters are flat {char = true}
+    -- tables; mutedProfessions/mutedConcentrationProfessions are nested one
+    -- level deeper ({char = {profession = true}}), so they need separate
+    -- counting shapes rather than one CountMuted for both.
+    local function CountFlat(field)
+        local count = 0
+        if MoxieTrackerDB[field] then
+            for _ in pairs(MoxieTrackerDB[field]) do
+                count = count + 1
+            end
         end
+        return count
     end
-    ns.Print("muted characters: %d", mutedCount)
+    local function CountNested(field)
+        local count = 0
+        if MoxieTrackerDB[field] then
+            for _, entries in pairs(MoxieTrackerDB[field]) do
+                for _ in pairs(entries) do
+                    count = count + 1
+                end
+            end
+        end
+        return count
+    end
+    ns.Print("Knowledge mutes: %d character(s), %d profession(s)",
+        CountFlat("mutedCharacters"), CountNested("mutedProfessions"))
+    ns.Print("Concentration mutes: %d character(s), %d profession(s)",
+        CountFlat("mutedConcentrationCharacters"), CountNested("mutedConcentrationProfessions"))
 
     ns.Print("Knowledge Points window: %s", MoxieTrackerDB.hideKnowledgeWindow and "hidden" or "shown")
+    ns.Print("Concentration window: %s", MoxieTrackerDB.hideConcentrationWindow and "hidden" or "shown")
 
     if MoxieTrackerDB.thresholds then
         local parts = {}
@@ -200,9 +252,9 @@ local COMMANDS = {
     {
         name = "reset",
         help = {
-            "/moxie reset position - move the panel back to the crafting window's top-right",
-            "/moxie reset settings - restore hidden rows, muted characters, the Knowledge Points window, " ..
-                "pin state, thresholds and debug logging to defaults"
+            "/moxie reset position - move all three windows back to their default positions",
+            "/moxie reset settings - restore hidden rows, muted characters/professions, the Knowledge " ..
+                "Points and Concentration windows, pin state, thresholds and debug logging to defaults"
         },
         handler = HandleReset
     },

@@ -253,7 +253,8 @@ function ns.CollectKnowledgeRoster(includeMuted)
         table.insert(roster, { key = key, name = name, points = points, professions = professions, muted = muted })
     end
 
-    local currentProfessions, currentTotal = FilterMutedProfessions(currentKey, ns.CollectUnspentKnowledgeByProfession())
+    local currentProfessions, currentTotal =
+        FilterMutedProfessions(currentKey, ns.CollectUnspentKnowledgeByProfession())
     Add(currentKey, currentName, currentTotal, currentProfessions)
 
     for key, entry in pairs(MoxieTrackerDB.knowledge or {}) do
@@ -312,5 +313,297 @@ function ns.CollectKnowledgeProfessionRoster()
         return a.characterName < b.characterName
     end)
 
+    return list
+end
+
+--------------------------------------------------------------------------------
+-- Concentration roster (#40)
+--------------------------------------------------------------------------------
+
+-- Attempts to learn the currently-open profession's Concentration currency
+-- ID, persisting it into MoxieTrackerDB.concentrationCurrencyIDs so it does
+-- not need rediscovering on a later login. Safe to call any time -- returns
+-- nil for a gathering profession (no Concentration currency exists) or when
+-- no profession's crafting window is open. See ns.CONCENTRATION_PROFESSIONS
+-- in the Config file for why this is a live per-profession lookup rather
+-- than a static ID table, and TODO.md's Sources section for how the API
+-- shape was confirmed.
+function ns.DiscoverConcentrationCurrencyID()
+    if not C_TradeSkillUI or not C_TradeSkillUI.GetProfessionChildSkillLineID
+        or not C_TradeSkillUI.GetConcentrationCurrencyID or not C_TradeSkillUI.GetProfessionInfoBySkillLineID then
+        return nil
+    end
+
+    local skillLineID = C_TradeSkillUI.GetProfessionChildSkillLineID()
+    if not skillLineID or skillLineID <= 0 then
+        return nil
+    end
+
+    local currencyID = C_TradeSkillUI.GetConcentrationCurrencyID(skillLineID)
+    if not currencyID then
+        return nil
+    end
+
+    local professionInfo = C_TradeSkillUI.GetProfessionInfoBySkillLineID(skillLineID)
+    local professionName = professionInfo and ns.CONCENTRATION_PROFESSION_BY_ENUM[professionInfo.profession]
+    if not professionName then
+        return nil
+    end
+
+    MoxieTrackerDB.concentrationCurrencyIDs = MoxieTrackerDB.concentrationCurrencyIDs or {}
+    MoxieTrackerDB.concentrationCurrencyIDs[professionName] = currencyID
+    return professionName, currencyID
+end
+
+-- Live read of one profession's Concentration for the current character, or
+-- nil if that profession's currency ID has not been discovered yet (see
+-- ns.DiscoverConcentrationCurrencyID). Returns the same three fields
+-- C_CurrencyInfo.GetCurrencyInfo exposes for a regenerating currency:
+-- quantity, maxQuantity, and the recharge interval in milliseconds per
+-- point -- all read live, never hardcoded (confirmed available on this
+-- struct via derfloh205/CraftSim's ConcentrationData:Update()).
+function ns.CollectConcentrationForProfession(professionName)
+    local currencyIDs = MoxieTrackerDB.concentrationCurrencyIDs
+    local currencyID = currencyIDs and currencyIDs[professionName]
+    if not currencyID then
+        return nil
+    end
+    local info = C_CurrencyInfo.GetCurrencyInfo(currencyID)
+    if not info then
+        return nil
+    end
+    return {
+        quantity = info.quantity or 0,
+        maxQuantity = info.maxQuantity or 0,
+        rechargeMS = info.rechargingCycleDurationMS or 0,
+    }
+end
+
+-- Projects a stored (possibly stale, for an offline character) Concentration
+-- snapshot forward to "now", the same linear-regen formula
+-- derfloh205/CraftSim's ConcentrationData:GetCurrentAmount()/:GetTimeUntil()
+-- use: amount grows by one point per rechargeMS/1000 seconds elapsed since
+-- lastUpdated, capped at maxQuantity. `secondsUntilCap` is 0 once already
+-- there, or nil when the recharge rate isn't known (an undiscovered/zero
+-- rechargeMS currency has nothing to project).
+function ns.ProjectConcentration(snapshot)
+    local rechargeSeconds = (snapshot.rechargeMS or 0) / 1000
+    local current = snapshot.quantity or 0
+
+    if rechargeSeconds > 0 and snapshot.maxQuantity and snapshot.maxQuantity > 0 then
+        local elapsed = math.max(0, (GetServerTime() - (snapshot.lastUpdated or GetServerTime())))
+        current = math.min(snapshot.maxQuantity, current + (elapsed / rechargeSeconds))
+    end
+
+    local secondsUntilCap
+    if rechargeSeconds > 0 and snapshot.maxQuantity and snapshot.maxQuantity > 0 then
+        secondsUntilCap = math.max(0, (snapshot.maxQuantity - current) * rechargeSeconds)
+    end
+
+    return current, secondsUntilCap
+end
+
+-- Whether the current character has actually learned `profession` (an
+-- Enum.Profession value). Confirmed against derfloh205/CraftSim's
+-- IsProfessionLearned (Util/Util.lua) and each function's real return
+-- signature in Blizzard's own source
+-- (Blizzard_ProfessionsBook.lua/Blizzard_WorldMapTemplates.lua):
+-- GetProfessions() returns up to six profession-book slot indices
+-- (prof1, prof2, archaeology, fishing, cooking, firstAid -- several
+-- commonly nil, so each is checked individually rather than via ipairs()
+-- over a table literal, which stops at the first nil and could skip a
+-- later, populated slot), GetProfessionInfo(slotIndex)'s 7th return value
+-- is that slot's skillLineID, and C_TradeSkillUI.GetProfessionInfoBySkillLineID
+-- resolves the locale-independent Enum.Profession for it.
+--
+-- This exists because C_CurrencyInfo.GetCurrencyInfo happily returns a
+-- valid (0-quantity) struct for a Concentration currency ID discovered via
+-- a *different* character on the account (currency IDs are account-wide
+-- once known, see ns.DiscoverConcentrationCurrencyID), even for a
+-- profession this character has never trained. Without this check, every
+-- profession any alt had ever opened would show up for every character.
+local function CheckProfessionSlot(slotIndex, profession)
+    if not slotIndex then
+        return false
+    end
+    local skillLineID = select(7, GetProfessionInfo(slotIndex))
+    local info = skillLineID and C_TradeSkillUI.GetProfessionInfoBySkillLineID(skillLineID)
+    return info ~= nil and info.profession == profession
+end
+
+function ns.IsProfessionLearned(profession)
+    if not GetProfessions or not GetProfessionInfo or not C_TradeSkillUI
+        or not C_TradeSkillUI.GetProfessionInfoBySkillLineID then
+        return false
+    end
+    local prof1, prof2, arch, fish, cook, firstAid = GetProfessions()
+    return CheckProfessionSlot(prof1, profession) or CheckProfessionSlot(prof2, profession)
+        or CheckProfessionSlot(arch, profession) or CheckProfessionSlot(fish, profession)
+        or CheckProfessionSlot(cook, profession) or CheckProfessionSlot(firstAid, profession)
+end
+
+-- Persists the current character's Concentration into the account-wide
+-- roster, one entry per profession whose currency ID is already known AND
+-- that this character has actually learned (ns.IsProfessionLearned) --
+-- mirrors ns.SnapshotKnowledge's per-logout accumulation, called from the
+-- same PLAYER_LOGOUT handler (see MoxieTracker_UI.lua for why logout, not
+-- entering-world). A profession discovered on some other character, but not
+-- learned by this one, stays absent here entirely.
+function ns.SnapshotConcentration()
+    local key, name = ns.GetCharacterKey()
+    local professions = {}
+
+    for _, profession in ipairs(ns.CONCENTRATION_PROFESSIONS) do
+        if MoxieTrackerDB.concentrationCurrencyIDs and MoxieTrackerDB.concentrationCurrencyIDs[profession.name]
+            and ns.IsProfessionLearned(profession.enum) then
+            local live = ns.CollectConcentrationForProfession(profession.name)
+            if live then
+                professions[profession.name] = {
+                    quantity = live.quantity,
+                    maxQuantity = live.maxQuantity,
+                    rechargeMS = live.rechargeMS,
+                    lastUpdated = GetServerTime(),
+                }
+            end
+        end
+    end
+
+    MoxieTrackerDB.concentration = MoxieTrackerDB.concentration or {}
+    MoxieTrackerDB.concentration[key] = { name = name, professions = professions }
+end
+
+-- Returns the saved Concentration roster as a name-sorted array, same shape
+-- as ns.CollectKnowledgeRoster: the current character's professions are
+-- always live (a direct ns.CollectConcentrationForProfession read, not
+-- last-login's snapshot), every other character's are projected forward
+-- from their last snapshot via ns.ProjectConcentration since Concentration
+-- keeps regenerating while offline, unlike Knowledge. Each profession entry
+-- carries `current` (rounded down to a whole point, matching what the
+-- in-game currency display shows) and `secondsUntilCap` for the caller to
+-- format. Muting is Concentration's own independent whole-character/
+-- per-profession pair (ns.IsConcentrationCharacterMuted/
+-- ns.IsConcentrationProfessionMuted), so it never touches Knowledge's mute
+-- state for the same character.
+function ns.CollectConcentrationRoster(includeMuted)
+    local currentKey, currentName = ns.GetCharacterKey()
+    local roster = {}
+    local seen = {}
+
+    local function BuildProfessions(characterKey, source, isLive)
+        local result = {}
+        local any = false
+        for _, profession in ipairs(ns.CONCENTRATION_PROFESSIONS) do
+            local snapshot = source and source[profession.name]
+            if snapshot then
+                local muted = ns.IsConcentrationProfessionMuted(characterKey, profession.name)
+                if includeMuted or not muted then
+                    local current, secondsUntilCap
+                    if isLive then
+                        current, secondsUntilCap = snapshot.quantity, nil
+                        if snapshot.rechargeMS and snapshot.rechargeMS > 0 and snapshot.maxQuantity
+                            and snapshot.maxQuantity > 0 then
+                            secondsUntilCap = math.max(0, (snapshot.maxQuantity - snapshot.quantity)
+                                * (snapshot.rechargeMS / 1000))
+                        end
+                    else
+                        current, secondsUntilCap = ns.ProjectConcentration(snapshot)
+                        current = math.floor(current)
+                    end
+                    table.insert(result, {
+                        name = profession.name,
+                        current = current,
+                        maxQuantity = snapshot.maxQuantity,
+                        secondsUntilCap = secondsUntilCap,
+                        muted = muted,
+                    })
+                    any = true
+                end
+            end
+        end
+        table.sort(result, function(a, b)
+            return a.name < b.name
+        end)
+        return result, any
+    end
+
+    local function Add(key, name, source, isLive)
+        if seen[key] then
+            return
+        end
+        seen[key] = true
+
+        local wholeMuted = ns.IsConcentrationCharacterMuted(key)
+        if wholeMuted and not includeMuted then
+            return
+        end
+
+        local professions, any = BuildProfessions(key, source, isLive)
+        if not includeMuted and not any then
+            return
+        end
+
+        table.insert(roster, { key = key, name = name, professions = professions, muted = wholeMuted })
+    end
+
+    -- Live source is gated by ns.IsProfessionLearned the same way
+    -- ns.SnapshotConcentration is (see the comment there): a currency ID
+    -- discovered via a different character is known account-wide, but
+    -- must not be attributed to a character who never trained that
+    -- profession.
+    local liveSource = {}
+    for _, profession in ipairs(ns.CONCENTRATION_PROFESSIONS) do
+        if MoxieTrackerDB.concentrationCurrencyIDs and MoxieTrackerDB.concentrationCurrencyIDs[profession.name]
+            and ns.IsProfessionLearned(profession.enum) then
+            local live = ns.CollectConcentrationForProfession(profession.name)
+            if live then
+                liveSource[profession.name] = live
+            end
+        end
+    end
+    Add(currentKey, currentName, liveSource, true)
+
+    for key, entry in pairs(MoxieTrackerDB.concentration or {}) do
+        Add(key, entry.name, entry.professions, false)
+    end
+
+    table.sort(roster, function(a, b)
+        return a.name < b.name
+    end)
+
+    return roster
+end
+
+-- Flat character+profession list for the options panel's Concentration
+-- profession-mute section, mirroring ns.CollectKnowledgeProfessionRoster's
+-- shape exactly (same characterKey/characterName/professionName/muted
+-- fields, plus `current`/`maxQuantity` for context in place of Knowledge's
+-- `points`). A wholly muted character is skipped entirely, same reasoning
+-- as ns.CollectKnowledgeProfessionRoster: its roster line never renders, so
+-- per-profession controls for it would have nothing to affect. Built from
+-- ns.CollectConcentrationRoster(true) rather than reimplementing the
+-- live-vs-projected read, so this and the tracker window always agree on
+-- what a character's Concentration actually is.
+function ns.CollectConcentrationProfessionRoster()
+    local list = {}
+    for _, entry in ipairs(ns.CollectConcentrationRoster(true)) do
+        if not entry.muted then
+            for _, profession in ipairs(entry.professions) do
+                table.insert(list, {
+                    characterKey = entry.key,
+                    characterName = entry.name,
+                    professionName = profession.name,
+                    current = profession.current,
+                    maxQuantity = profession.maxQuantity,
+                    muted = profession.muted,
+                })
+            end
+        end
+    end
+    table.sort(list, function(a, b)
+        if a.characterName == b.characterName then
+            return a.professionName < b.professionName
+        end
+        return a.characterName < b.characterName
+    end)
     return list
 end

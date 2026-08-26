@@ -39,7 +39,15 @@ function M.install()
     _G.C_CurrencyInfo = {
         GetCurrencyInfo = function(id)
             local c = currencies[id]
-            return c and { name = c.name, quantity = c.quantity } or nil
+            if not c then
+                return nil
+            end
+            return {
+                name = c.name,
+                quantity = c.quantity,
+                maxQuantity = c.maxQuantity,
+                rechargingCycleDurationMS = c.rechargingCycleDurationMS,
+            }
         end,
         GetCurrencyListSize = function()
             return #currencyList
@@ -98,14 +106,84 @@ function M.install()
     _G.GameTooltip = StubObject()
     _G.UIParent = StubObject()
 
+    -- Real WoW provides Enum.Profession as a client-defined global (the
+    -- actual numeric values are Blizzard's, not MoxieTracker's, and are
+    -- irrelevant here -- ns.CONCENTRATION_PROFESSIONS only needs each key
+    -- to be distinct and stable so its enum-to-name lookup round-trips).
+    _G.Enum = {
+        Profession = {
+            Alchemy = 1,
+            Blacksmithing = 2,
+            Enchanting = 3,
+            Engineering = 4,
+            Herbalism = 5,
+            Inscription = 6,
+            Jewelcrafting = 7,
+            Leatherworking = 8,
+            Mining = 9,
+            Skinning = 10,
+            Tailoring = 11,
+        },
+    }
+
     local characterName, realmName = "TestChar", "TestRealm"
     _G.UnitName = function() return characterName end
     _G.GetRealmName = function() return realmName end
 
+    -- Concentration discovery (#40): [skillLineID] = { profession = Enum.Profession.X,
+    -- currencyID = n }. childSkillLineID is what
+    -- C_TradeSkillUI.GetProfessionChildSkillLineID() returns -- nil means no
+    -- profession window is open, matching the real API outside a crafting session.
+    local childSkillLineID
+    local skillLines = {}
+    local serverTime = 1000000
+
+    _G.C_TradeSkillUI = {
+        GetProfessionChildSkillLineID = function()
+            return childSkillLineID
+        end,
+        GetConcentrationCurrencyID = function(skillLineID)
+            local entry = skillLines[skillLineID]
+            return entry and entry.currencyID or nil
+        end,
+        GetProfessionInfoBySkillLineID = function(skillLineID)
+            local entry = skillLines[skillLineID]
+            return entry and { profession = entry.profession } or nil
+        end,
+    }
+
+    _G.GetServerTime = function()
+        return serverTime
+    end
+
+    -- ns.IsProfessionLearned (#40): GetProfessions() returns up to six
+    -- profession-book slot indices, and GetProfessionInfo(slotIndex)'s 7th
+    -- return value is that slot's skillLineID. The stub collapses "slot
+    -- index" and "skillLineID" into the same value -- nothing in
+    -- ns.IsProfessionLearned cares that they're distinct concepts in the
+    -- real API, only that GetProfessionInfo(slot) resolves to a skillLineID
+    -- that C_TradeSkillUI.GetProfessionInfoBySkillLineID (already stubbed
+    -- above via setOpenProfession) can look up.
+    local learnedSkillLineIDs = {}
+
+    _G.GetProfessions = function()
+        return learnedSkillLineIDs[1], learnedSkillLineIDs[2], learnedSkillLineIDs[3],
+            learnedSkillLineIDs[4], learnedSkillLineIDs[5], learnedSkillLineIDs[6]
+    end
+
+    _G.GetProfessionInfo = function(skillLineID)
+        return nil, nil, nil, nil, nil, nil, skillLineID
+    end
+
     local fixtures
     fixtures = {
-        setCurrency = function(id, name, quantity)
-            currencies[id] = { name = name, quantity = quantity }
+        setCurrency = function(id, name, quantity, maxQuantity, rechargingCycleDurationMS)
+            currencies[id] = {
+                name = name,
+                quantity = quantity,
+                maxQuantity = maxQuantity,
+                rechargingCycleDurationMS = rechargingCycleDurationMS,
+            }
         end,
         setItem = function(id, name, count)
             items[id] = { name = name, count = count }
@@ -118,6 +196,25 @@ function M.install()
             characterName = name
             realmName = realm
         end,
+        -- Simulates a profession's crafting window being open, with its
+        -- Concentration currency ID resolvable the way the real client
+        -- exposes it once that profession's skill line is known.
+        setOpenProfession = function(skillLineID, professionEnum, currencyID)
+            childSkillLineID = skillLineID
+            skillLines[skillLineID] = { profession = professionEnum, currencyID = currencyID }
+        end,
+        closeProfession = function()
+            childSkillLineID = nil
+        end,
+        setServerTime = function(value)
+            serverTime = value
+        end,
+        -- Which professions (by skillLineID, matching setOpenProfession's
+        -- first argument) the current character has actually learned, for
+        -- ns.IsProfessionLearned. Accepts up to six, mirroring GetProfessions().
+        setLearnedProfessions = function(...)
+            learnedSkillLineIDs = { ... }
+        end,
         -- Between test scenarios: clears every fixture and starts MoxieTrackerDB
         -- fresh, so one test's hidden rows or currencies cannot leak into the next.
         reset = function()
@@ -125,6 +222,10 @@ function M.install()
             currencyList = {}
             items = {}
             characterName, realmName = "TestChar", "TestRealm"
+            childSkillLineID = nil
+            skillLines = {}
+            serverTime = 1000000
+            learnedSkillLineIDs = {}
             _G.MoxieTrackerDB = {}
         end,
     }

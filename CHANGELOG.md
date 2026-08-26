@@ -5,6 +5,18 @@ All notable changes to MoxieTracker are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2026-08-26
+
+### Added
+- Tracks Crafter's Concentration for every character that has logged in, in its own window below the Knowledge Points window, with a projected time until each profession reaches its cap (#40). Concentration keeps regenerating in real time even while a character is offline, so an alt's row is projected forward from its last login rather than shown stale; the current character's own row stays live. Currency IDs are discovered automatically the first time each profession's crafting window is opened -- there is no fixed list to hardcode, since Concentration is resolved per profession rather than by a static ID.
+- Every window (the main tracker, Knowledge Points, and the new Concentration window) is now independently movable and remembers its own position, rather than Knowledge Points always trailing beneath the main window. Undragged windows keep stacking beneath the one above them exactly as before, so nothing moves for existing users until a window is actually dragged.
+- Concentration coloring gets its own threshold per crafting profession (default 300, editable in the options panel), separate from Moxie's single shared threshold; a currency at its real cap always renders red regardless of the threshold.
+- Concentration gets its own "Concentration" and "Concentration Professions" mute sections in the options panel, mirroring Knowledge's Characters/Character Professions pair exactly -- muting a character's (or one profession's) Concentration never touches their Knowledge mute state, and vice versa.
+
+### Changed
+- The options panel's Position section now has one compact row per window (label, X, Y, Reset) instead of a single block for the main window only, with X/Y column labels and Tab/Shift-Tab moving between a row's two fields.
+- All eleven color thresholds (Unalloyed Abundance, Moxie, Fused Vitality, and the eight Concentration professions) now live under one "Color thresholds" section with a single reset button, instead of Concentration having its own separate section.
+
 ## [1.8.0] - 2026-08-11
 
 ### Fixed
@@ -289,6 +301,7 @@ during load; that tag was removed and reused for this release.
 - The full GPL-3.0 text, replacing a truncated stub that named the license but
   omitted its terms.
 
+[1.9.0]: https://github.com/Tharavol/MoxieTracker/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/Tharavol/MoxieTracker/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/Tharavol/MoxieTracker/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/Tharavol/MoxieTracker/compare/v1.5.2...v1.6.0

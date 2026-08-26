@@ -11,8 +11,8 @@ local _, ns = ...
 -- panel's real visible height, and since nothing wrapped the whole page, the
 -- overflow used to just draw past the bottom of the window and over the
 -- Close button instead of scrolling. A single scroll region covering
--- everything fixes that regardless of how many rows any of the three lists
--- below end up with.
+-- everything fixes that regardless of how many rows any of the lists below
+-- end up with.
 --
 -- The scroll frame's own size is an explicit SetSize (see its creation
 -- below), not anchored to the options panel's edges, because a canvas
@@ -32,27 +32,48 @@ local OPTIONS_CONTENT_WIDTH = 500
 local OPTIONS_CONTENT_HEIGHT = 460
 local OPTIONS_BOTTOM_MARGIN = 16
 
+-- The three independently positioned tracker windows (#40), in the order
+-- their compact Position rows render.
+local WINDOWS = {
+    { key = "main", label = "Main" },
+    { key = "knowledge", label = "Knowledge" },
+    { key = "concentration", label = "Concentration" },
+}
+
 local OPTIONS_LOGIN_ROW_Y = 0
 local OPTIONS_KNOWLEDGE_WINDOW_ROW_Y = OPTIONS_LOGIN_ROW_Y - OPTIONS_ROW_HEIGHT
+local OPTIONS_CONCENTRATION_WINDOW_ROW_Y = OPTIONS_KNOWLEDGE_WINDOW_ROW_Y - OPTIONS_ROW_HEIGHT
 
--- Position section: a header, two offset fields, and a reset button.
-local OPTIONS_POSITION_HEADER_Y = OPTIONS_KNOWLEDGE_WINDOW_ROW_Y - OPTIONS_ROW_HEIGHT
-local OPTIONS_POSITION_X_ROW_Y = OPTIONS_POSITION_HEADER_Y - OPTIONS_HEADER_HEIGHT
-local OPTIONS_POSITION_Y_ROW_Y = OPTIONS_POSITION_X_ROW_Y - OPTIONS_ROW_HEIGHT
-local OPTIONS_POSITION_RESET_Y = OPTIONS_POSITION_Y_ROW_Y - OPTIONS_ROW_HEIGHT
+-- Position section: a header (sharing its row with the X/Y column labels)
+-- plus one compact "Label [X] [Y] [Reset]" row per window (#40 -- previously
+-- a header, two offset fields, and a single reset button for the one main
+-- window only).
+local OPTIONS_POSITION_HEADER_Y = OPTIONS_CONCENTRATION_WINDOW_ROW_Y - OPTIONS_ROW_HEIGHT
+local OPTIONS_POSITION_MAIN_ROW_Y = OPTIONS_POSITION_HEADER_Y - OPTIONS_HEADER_HEIGHT
+local OPTIONS_POSITION_KNOWLEDGE_ROW_Y = OPTIONS_POSITION_MAIN_ROW_Y - OPTIONS_ROW_HEIGHT
+local OPTIONS_POSITION_CONCENTRATION_ROW_Y = OPTIONS_POSITION_KNOWLEDGE_ROW_Y - OPTIONS_ROW_HEIGHT
 
--- Threshold section: a header, three threshold fields, and a reset button.
-local OPTIONS_THRESHOLD_HEADER_Y = OPTIONS_POSITION_RESET_Y - OPTIONS_ROW_HEIGHT - OPTIONS_SECTION_GAP
+-- Threshold section: a header, the three base thresholds, one row per
+-- Concentration profession (#40 -- all eleven thresholds share one section
+-- and one reset button, rather than splitting Concentration into its own),
+-- then the reset button. The Concentration rows' start is a constant since
+-- ns.CONCENTRATION_PROFESSIONS is a fixed-length table known at load time;
+-- CreateOptionsPanel still loops over it rather than naming eight more
+-- per-profession constants.
+local OPTIONS_THRESHOLD_HEADER_Y = OPTIONS_POSITION_CONCENTRATION_ROW_Y - OPTIONS_ROW_HEIGHT - OPTIONS_SECTION_GAP
 local OPTIONS_THRESHOLD_UA_ROW_Y = OPTIONS_THRESHOLD_HEADER_Y - OPTIONS_HEADER_HEIGHT
 local OPTIONS_THRESHOLD_MOXIE_ROW_Y = OPTIONS_THRESHOLD_UA_ROW_Y - OPTIONS_ROW_HEIGHT
 local OPTIONS_THRESHOLD_FV_ROW_Y = OPTIONS_THRESHOLD_MOXIE_ROW_Y - OPTIONS_ROW_HEIGHT
-local OPTIONS_THRESHOLD_RESET_Y = OPTIONS_THRESHOLD_FV_ROW_Y - OPTIONS_ROW_HEIGHT
+local OPTIONS_THRESHOLD_CONCENTRATION_FIRST_Y = OPTIONS_THRESHOLD_FV_ROW_Y - OPTIONS_ROW_HEIGHT
+local OPTIONS_THRESHOLD_RESET_Y = OPTIONS_THRESHOLD_CONCENTRATION_FIRST_Y
+    - (#ns.CONCENTRATION_PROFESSIONS * OPTIONS_ROW_HEIGHT)
 
 -- Everything from here down has a row count only known at refresh time (the
--- tracked-currency list, the character-mute list, and the profession-mute
--- list), so their start positions are computed in RefreshOptions rather than
--- as fixed constants -- each section's header anchors to the bottom of
--- whatever rendered above it.
+-- tracked-currency list and the four mute lists -- Knowledge's characters
+-- and character-professions, then Concentration's own independent pair), so
+-- their start positions are computed in RefreshOptions rather than as fixed
+-- constants -- each section's header anchors to the bottom of whatever
+-- rendered above it.
 local OPTIONS_FIRST_ROW_Y = OPTIONS_THRESHOLD_RESET_Y - OPTIONS_ROW_HEIGHT - OPTIONS_SECTION_GAP
 
 local optionsCategory
@@ -73,7 +94,7 @@ local function CreateSettingField(parent, y, labelText)
     return editBox
 end
 
--- Shared shape for all three row lists below: a checkbox plus label, parented
+-- Shared shape for all five row lists below: a checkbox plus label, parented
 -- to the shared scroll content and positioned explicitly by the caller (each
 -- list's start Y depends on how tall the list above it turned out to be, so
 -- position can't be baked in here the way a single fixed-origin list could).
@@ -127,17 +148,47 @@ local function EnsureProfessionRow(index)
     end)
 end
 
+-- Concentration's own independent whole-character mute list (#40), mirroring
+-- EnsureCharacterRow exactly but against ns.SetConcentrationCharacterMuted
+-- so muting a character's Concentration never touches their Knowledge mute.
+local function EnsureConcentrationCharacterRow(index)
+    return EnsureListRow(ns.optionsPanel.concentrationCharRows, index, "MoxieTrackerConcentrationCharacterOption",
+        function(self)
+            ns.SetConcentrationCharacterMuted(self.entryKey, not self:GetChecked())
+            ns.UpdateConcentrationDisplay()
+        end)
+end
+
+-- Concentration's per-profession mute list (#40), mirroring
+-- EnsureProfessionRow against ns.SetConcentrationProfessionMuted.
+local function EnsureConcentrationProfessionRow(index)
+    return EnsureListRow(ns.optionsPanel.concentrationProfessionRows, index,
+        "MoxieTrackerConcentrationProfessionOption", function(self)
+            ns.SetConcentrationProfessionMuted(self.characterKey, self.professionName, not self:GetChecked())
+            ns.UpdateConcentrationDisplay()
+        end)
+end
+
 function ns.RefreshOptions()
     ns.optionsPanel.loginCheckbox:SetChecked(not MoxieTrackerDB.suppressLoginMessage)
     ns.optionsPanel.knowledgeWindowCheckbox:SetChecked(not MoxieTrackerDB.hideKnowledgeWindow)
+    ns.optionsPanel.concentrationWindowCheckbox:SetChecked(not MoxieTrackerDB.hideConcentrationWindow)
 
-    local offsetX, offsetY = ns.GetOffset()
-    ns.optionsPanel.xEditBox:SetText(tostring(offsetX))
-    ns.optionsPanel.yEditBox:SetText(tostring(offsetY))
+    for _, window in ipairs(WINDOWS) do
+        local fields = ns.optionsPanel.positionFields[window.key]
+        local x, y = ns.GetOffset(window.key)
+        fields.xEditBox:SetText(x and tostring(x) or "")
+        fields.yEditBox:SetText(y and tostring(y) or "")
+    end
 
     ns.optionsPanel.unalloyedEditBox:SetText(tostring(ns.GetThreshold("unalloyedAbundance")))
     ns.optionsPanel.moxieEditBox:SetText(tostring(ns.GetThreshold("moxie")))
     ns.optionsPanel.fusedVitalityEditBox:SetText(tostring(ns.GetThreshold("fusedVitality")))
+
+    for _, profession in ipairs(ns.CONCENTRATION_PROFESSIONS) do
+        local box = ns.optionsPanel.concentrationThresholdEditBoxes[profession.name]
+        box:SetText(tostring(ns.GetThreshold("concentration:" .. profession.name)))
+    end
 
     ----------------------------------------------------------------------
     -- Tracked-currency rows.
@@ -237,10 +288,82 @@ function ns.RefreshOptions()
     local professionRowCount = math.max(#professionList, 1)
     local professionListBottomY = professionRowsY - (professionRowCount * OPTIONS_ROW_HEIGHT)
 
+    ----------------------------------------------------------------------
+    -- Concentration character-mute rows (#40), mirroring the Characters
+    -- section above but against Concentration's own independent mute state
+    -- -- muting a character's Concentration never touches their Knowledge
+    -- mute, and vice versa. Same includeMuted=true / always-listed-current-
+    -- character reasoning as Characters.
+    ----------------------------------------------------------------------
+    local concentrationCharHeaderY = professionListBottomY - OPTIONS_SECTION_GAP
+    ns.optionsPanel.concentrationCharHeader:ClearAllPoints()
+    ns.optionsPanel.concentrationCharHeader:SetPoint("TOPLEFT", ns.optionsPanel.content, "TOPLEFT", 0,
+        concentrationCharHeaderY)
+
+    local concentrationCharRowsY = concentrationCharHeaderY - OPTIONS_HEADER_HEIGHT
+
+    local concentrationRoster = ns.CollectConcentrationRoster(true)
+
+    for _, row in ipairs(ns.optionsPanel.concentrationCharRows) do
+        row:Hide()
+    end
+
+    for index, entry in ipairs(concentrationRoster) do
+        local row = EnsureConcentrationCharacterRow(index)
+        row.entryKey = entry.key
+        row.label:SetText(entry.name)
+        row:SetChecked(not entry.muted)
+        PositionRow(row, concentrationCharRowsY - ((index - 1) * OPTIONS_ROW_HEIGHT))
+        row:Show()
+    end
+
+    local concentrationCharRowCount = math.max(#concentrationRoster, 1)
+    local concentrationCharListBottomY = concentrationCharRowsY - (concentrationCharRowCount * OPTIONS_ROW_HEIGHT)
+
+    ----------------------------------------------------------------------
+    -- Concentration profession-mute rows (#40), mirroring Character
+    -- Professions against ns.CollectConcentrationProfessionRoster.
+    ----------------------------------------------------------------------
+    local concentrationProfessionHeaderY = concentrationCharListBottomY - OPTIONS_SECTION_GAP
+    ns.optionsPanel.concentrationProfessionHeader:ClearAllPoints()
+    ns.optionsPanel.concentrationProfessionHeader:SetPoint("TOPLEFT", ns.optionsPanel.content, "TOPLEFT", 0,
+        concentrationProfessionHeaderY)
+
+    local concentrationProfessionRowsY = concentrationProfessionHeaderY - OPTIONS_HEADER_HEIGHT
+
+    local concentrationProfessionList = ns.CollectConcentrationProfessionRoster()
+
+    for _, row in ipairs(ns.optionsPanel.concentrationProfessionRows) do
+        row:Hide()
+    end
+
+    for index, entry in ipairs(concentrationProfessionList) do
+        local row = EnsureConcentrationProfessionRow(index)
+        row.characterKey = entry.characterKey
+        row.professionName = entry.professionName
+        row.label:SetText(string.format("%s \226\128\148 %s", entry.characterName, entry.professionName))
+        row:SetChecked(not entry.muted)
+        PositionRow(row, concentrationProfessionRowsY - ((index - 1) * OPTIONS_ROW_HEIGHT))
+        row:Show()
+    end
+
+    if #concentrationProfessionList == 0 then
+        ns.optionsPanel.concentrationProfessionEmpty:ClearAllPoints()
+        ns.optionsPanel.concentrationProfessionEmpty:SetPoint("TOPLEFT", ns.optionsPanel.content, "TOPLEFT", 0,
+            concentrationProfessionRowsY)
+        ns.optionsPanel.concentrationProfessionEmpty:Show()
+    else
+        ns.optionsPanel.concentrationProfessionEmpty:Hide()
+    end
+
+    local concentrationProfessionRowCount = math.max(#concentrationProfessionList, 1)
+    local concentrationProfessionListBottomY = concentrationProfessionRowsY
+        - (concentrationProfessionRowCount * OPTIONS_ROW_HEIGHT)
+
     -- Content height drives whether the scroll frame's bar is usable at all;
     -- floored at 1 rather than 0, since a zero-height scroll child is what
     -- some client versions treat as "not scrollable" even once rows appear.
-    ns.optionsPanel.content:SetHeight(math.max(1, -professionListBottomY + OPTIONS_BOTTOM_MARGIN))
+    ns.optionsPanel.content:SetHeight(math.max(1, -concentrationProfessionListBottomY + OPTIONS_BOTTOM_MARGIN))
 
     -- A ScrollFrame does not reliably recompute its scroll range on its own
     -- when its scroll child is resized after creation; without this, rows
@@ -249,12 +372,141 @@ function ns.RefreshOptions()
     ns.optionsPanel.scrollFrame:UpdateScrollChildRect()
 end
 
+-- Called from MoxieTracker_UI.lua's drag-stop handlers after a window is
+-- dropped, so an already-open Options panel reflects the new position right
+-- away. ns.RefreshOptions only runs on the panel's OnShow, which does not
+-- fire again just because a window moved while Settings stayed open -- the
+-- symptom this exists to fix: drag a window with Settings open, and its X/Y
+-- boxes sat stale until the panel was closed and reopened. Updates just the
+-- two boxes for that window rather than calling ns.RefreshOptions, which
+-- would also reset the panel's scroll position back to the top on every
+-- drag. Skips a box that currently has keyboard focus, so a drag on one
+-- window cannot stomp text the user is mid-typing into another window's row.
+function ns.RefreshPositionField(windowKey)
+    local panel = ns.optionsPanel
+    if not panel or not panel:IsShown() then
+        return
+    end
+    local fields = panel.positionFields[windowKey]
+    if not fields then
+        return
+    end
+    local x, y = ns.GetOffset(windowKey)
+    if not fields.xEditBox:HasFocus() then
+        fields.xEditBox:SetText(x and tostring(x) or "")
+    end
+    if not fields.yEditBox:HasFocus() then
+        fields.yEditBox:SetText(y and tostring(y) or "")
+    end
+end
+
+-- Builds one window's compact Position row: "Label  [X]  [Y]  [Reset]" all
+-- on one line (#40 -- replacing what used to be a single header-plus-two-
+-- fields-plus-button block for the one main window only).
+local function CreatePositionRow(parent, y, window)
+    local label = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    label:SetPoint("TOPLEFT", parent, "TOPLEFT", 16, y)
+    label:SetWidth(90)
+    label:SetJustifyH("LEFT")
+    label:SetText(window.label)
+
+    local xEditBox = CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
+    xEditBox:SetSize(50, 20)
+    xEditBox:SetAutoFocus(false)
+    xEditBox:SetPoint("LEFT", label, "RIGHT", 4, 0)
+
+    local yEditBox = CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
+    yEditBox:SetSize(50, 20)
+    yEditBox:SetAutoFocus(false)
+    yEditBox:SetPoint("LEFT", xEditBox, "RIGHT", 8, 0)
+
+    local resetButton = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    resetButton:SetSize(90, 22)
+    resetButton:SetPoint("LEFT", yEditBox, "RIGHT", 12, 0)
+    resetButton:SetText("Reset")
+
+    -- Offsets are signed (the default vertical offset is -440), so these are
+    -- plain EditBoxes with manual tonumber() validation rather than
+    -- SetNumeric(true), which does not allow a minus sign.
+    --
+    -- The two fields commit together (a half-valid pair would anchor the
+    -- window off just one bad entry), but that must not mean "clear
+    -- whatever's typed the moment the OTHER box is merely still empty" --
+    -- Knowledge/Concentration start with BOTH boxes blank (no default
+    -- offset until first dragged, see ns.GetOffset), so filling in just X
+    -- and tabbing to Y used to immediately wipe X back to blank as soon as
+    -- that tab/Enter/focus-loss fired CommitOffset with Y still empty. A
+    -- box is only reverted when it holds text that fails to parse -- an
+    -- empty box waiting on its pair is left alone, not treated as invalid.
+    local function CommitOffset()
+        local xText, yText = xEditBox:GetText(), yEditBox:GetText()
+        local newX = xText ~= "" and tonumber(xText) or nil
+        local newY = yText ~= "" and tonumber(yText) or nil
+
+        if xText ~= "" and not newX then
+            local currentX = ns.GetOffset(window.key)
+            xEditBox:SetText(currentX and tostring(currentX) or "")
+        end
+        if yText ~= "" and not newY then
+            local _, currentY = ns.GetOffset(window.key)
+            yEditBox:SetText(currentY and tostring(currentY) or "")
+        end
+
+        if newX and newY then
+            ns.SetOffset(window.key, newX, newY)
+            ns.ApplyAnchor()
+        end
+    end
+
+    for _, box in ipairs({ xEditBox, yEditBox }) do
+        box:SetScript("OnEnterPressed", function(self)
+            CommitOffset()
+            self:ClearFocus()
+        end)
+        box:SetScript("OnEscapePressed", function(self)
+            self:ClearFocus()
+        end)
+        box:SetScript("OnEditFocusLost", CommitOffset)
+    end
+
+    -- Tab/shift-tab moves between X and Y within the row, rather than
+    -- leaving the box (WoW's EditBox does not chain focus between sibling
+    -- boxes on its own).
+    xEditBox:SetScript("OnTabPressed", function(self)
+        if IsShiftKeyDown() then
+            self:ClearFocus()
+        else
+            yEditBox:SetFocus()
+        end
+    end)
+    yEditBox:SetScript("OnTabPressed", function(self)
+        if IsShiftKeyDown() then
+            xEditBox:SetFocus()
+        else
+            self:ClearFocus()
+        end
+    end)
+
+    resetButton:SetScript("OnClick", function()
+        ns.ResetWindowPosition(window.key)
+        local resetX, resetY = ns.GetOffset(window.key)
+        xEditBox:SetText(resetX and tostring(resetX) or "")
+        yEditBox:SetText(resetY and tostring(resetY) or "")
+    end)
+
+    return { xEditBox = xEditBox, yEditBox = yEditBox }
+end
+
 local function CreateOptionsPanel()
     local panel = CreateFrame("Frame", "MoxieTrackerOptionsPanel", UIParent)
     panel.name = "MoxieTracker"
     panel.rows = {}
     panel.charRows = {}
     panel.professionRows = {}
+    panel.concentrationCharRows = {}
+    panel.concentrationProfessionRows = {}
+    panel.positionFields = {}
+    panel.concentrationThresholdEditBoxes = {}
 
     local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, -16)
@@ -300,8 +552,9 @@ local function CreateOptionsPanel()
     end)
     panel.loginCheckbox = loginCheckbox
 
-    -- Separate from muting individual characters: this is the blunt "I don't
-    -- want this second window at all" off switch, independent of the roster.
+    -- Separate from muting individual characters/professions: this is the
+    -- blunt "I don't want this window at all" off switch, independent of
+    -- either roster's mute state.
     local knowledgeWindowCheckbox = CreateFrame("CheckButton", "MoxieTrackerKnowledgeWindowOption", content,
         "UICheckButtonTemplate")
     knowledgeWindowCheckbox:SetSize(24, 24)
@@ -317,57 +570,51 @@ local function CreateOptionsPanel()
     end)
     panel.knowledgeWindowCheckbox = knowledgeWindowCheckbox
 
+    local concentrationWindowCheckbox = CreateFrame("CheckButton", "MoxieTrackerConcentrationWindowOption", content,
+        "UICheckButtonTemplate")
+    concentrationWindowCheckbox:SetSize(24, 24)
+    concentrationWindowCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", 0, OPTIONS_CONCENTRATION_WINDOW_ROW_Y)
+    concentrationWindowCheckbox.label = concentrationWindowCheckbox:CreateFontString(nil, "OVERLAY",
+        "GameFontHighlight")
+    concentrationWindowCheckbox.label:SetPoint("LEFT", concentrationWindowCheckbox, "RIGHT", 4, 0)
+    concentrationWindowCheckbox.label:SetText("Show Concentration window")
+    concentrationWindowCheckbox:SetScript("OnClick", function(self)
+        MoxieTrackerDB.hideConcentrationWindow = not self:GetChecked()
+        ns.UpdateConcentrationDisplay()
+        ns.RefreshConcentrationTicker()
+    end)
+    panel.concentrationWindowCheckbox = concentrationWindowCheckbox
+
     local positionHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     positionHeader:SetPoint("TOPLEFT", content, "TOPLEFT", 0, OPTIONS_POSITION_HEADER_Y)
     positionHeader:SetText("Position")
 
-    -- Offsets are signed (the default vertical offset is -440), so these are
-    -- plain EditBoxes with manual tonumber() validation rather than
-    -- SetNumeric(true), which does not allow a minus sign.
-    local xEditBox = CreateSettingField(content, OPTIONS_POSITION_X_ROW_Y, "Horizontal offset")
-    local yEditBox = CreateSettingField(content, OPTIONS_POSITION_Y_ROW_Y, "Vertical offset")
-    panel.xEditBox = xEditBox
-    panel.yEditBox = yEditBox
+    -- Column labels, aligned with CreatePositionRow's own layout (a 90px
+    -- window-name label plus 4px gap puts the X box's left edge at x=110;
+    -- the X box's 50px width plus 8px gap puts the Y box's at x=168) so
+    -- they sit directly above each row's boxes, sharing the header's row
+    -- rather than costing an extra one.
+    local xColumnLabel = content:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+    xColumnLabel:SetPoint("TOPLEFT", content, "TOPLEFT", 110, OPTIONS_POSITION_HEADER_Y)
+    xColumnLabel:SetWidth(50)
+    xColumnLabel:SetJustifyH("CENTER")
+    xColumnLabel:SetText("X")
 
-    -- Both fields commit together: a half-valid pair would anchor the panel
-    -- off just one bad entry, so invalid input reverts both to their last
-    -- stored (or default) value instead of applying only the valid one.
-    local function CommitOffset()
-        local x = tonumber(xEditBox:GetText())
-        local y = tonumber(yEditBox:GetText())
-        if not x or not y then
-            local currentX, currentY = ns.GetOffset()
-            xEditBox:SetText(tostring(currentX))
-            yEditBox:SetText(tostring(currentY))
-            return
-        end
-        MoxieTrackerDB.offsetX = x
-        MoxieTrackerDB.offsetY = y
-        ns.ApplyAnchor()
-    end
+    local yColumnLabel = content:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+    yColumnLabel:SetPoint("TOPLEFT", content, "TOPLEFT", 168, OPTIONS_POSITION_HEADER_Y)
+    yColumnLabel:SetWidth(50)
+    yColumnLabel:SetJustifyH("CENTER")
+    yColumnLabel:SetText("Y")
 
-    for _, box in ipairs({ xEditBox, yEditBox }) do
-        box:SetScript("OnEnterPressed", function(self)
-            CommitOffset()
-            self:ClearFocus()
-        end)
-        box:SetScript("OnEscapePressed", function(self)
-            self:ClearFocus()
-        end)
-        box:SetScript("OnEditFocusLost", CommitOffset)
-    end
+    panel.positionFields.main = CreatePositionRow(content, OPTIONS_POSITION_MAIN_ROW_Y, WINDOWS[1])
+    panel.positionFields.knowledge = CreatePositionRow(content, OPTIONS_POSITION_KNOWLEDGE_ROW_Y, WINDOWS[2])
+    panel.positionFields.concentration = CreatePositionRow(content, OPTIONS_POSITION_CONCENTRATION_ROW_Y, WINDOWS[3])
 
-    local resetPositionButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
-    resetPositionButton:SetSize(120, 22)
-    resetPositionButton:SetPoint("TOPLEFT", content, "TOPLEFT", 0, OPTIONS_POSITION_RESET_Y)
-    resetPositionButton:SetText("Reset position")
-    resetPositionButton:SetScript("OnClick", function()
-        ns.ResetPosition()
-        local x, y = ns.GetOffset()
-        xEditBox:SetText(tostring(x))
-        yEditBox:SetText(tostring(y))
-    end)
-
+    -- All thresholds together (#40 follow-up): Moxie/Unalloyed Abundance/
+    -- Fused Vitality and the 8 per-profession Concentration thresholds
+    -- under one header, rather than Concentration split into its own
+    -- separate section. They already share one flat MoxieTrackerDB.thresholds
+    -- table, so a single "Reset thresholds" button below covers all 11.
     local thresholdHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     thresholdHeader:SetPoint("TOPLEFT", content, "TOPLEFT", 0, OPTIONS_THRESHOLD_HEADER_Y)
     thresholdHeader:SetText("Color thresholds")
@@ -398,13 +645,27 @@ local function CreateOptionsPanel()
         if ns.frame:IsShown() then
             ns.UpdateDisplay()
         end
+        if key:find("^concentration:") then
+            ns.UpdateConcentrationDisplay()
+        end
     end
 
-    for _, field in ipairs({
+    local thresholdFields = {
         { box = unalloyedEditBox, key = "unalloyedAbundance" },
         { box = moxieEditBox, key = "moxie" },
         { box = fusedVitalityEditBox, key = "fusedVitality" },
-    }) do
+    }
+
+    for index, profession in ipairs(ns.CONCENTRATION_PROFESSIONS) do
+        local y = OPTIONS_THRESHOLD_CONCENTRATION_FIRST_Y - ((index - 1) * OPTIONS_ROW_HEIGHT)
+        local editBox = CreateSettingField(content, y, profession.name)
+        editBox:SetNumeric(true)
+        local key = "concentration:" .. profession.name
+        panel.concentrationThresholdEditBoxes[profession.name] = editBox
+        table.insert(thresholdFields, { box = editBox, key = key })
+    end
+
+    for _, field in ipairs(thresholdFields) do
         field.box:SetScript("OnEnterPressed", function(self)
             CommitThreshold(field.box, field.key)
             self:ClearFocus()
@@ -423,12 +684,13 @@ local function CreateOptionsPanel()
     resetThresholdsButton:SetText("Reset thresholds")
     resetThresholdsButton:SetScript("OnClick", function()
         MoxieTrackerDB.thresholds = nil
-        unalloyedEditBox:SetText(tostring(ns.GetThreshold("unalloyedAbundance")))
-        moxieEditBox:SetText(tostring(ns.GetThreshold("moxie")))
-        fusedVitalityEditBox:SetText(tostring(ns.GetThreshold("fusedVitality")))
+        for _, field in ipairs(thresholdFields) do
+            field.box:SetText(tostring(ns.GetThreshold(field.key)))
+        end
         if ns.frame:IsShown() then
             ns.UpdateDisplay()
         end
+        ns.UpdateConcentrationDisplay()
     end)
 
     -- Tracked-row checkboxes start at OPTIONS_FIRST_ROW_Y; RefreshOptions
@@ -456,6 +718,28 @@ local function CreateOptionsPanel()
     panel.professionEmpty = content:CreateFontString(nil, "ARTWORK", "GameFontDisable")
     panel.professionEmpty:SetText("No profession Knowledge recorded yet.")
     panel.professionEmpty:Hide()
+
+    -- Concentration's own mute sections (#40), mirroring Characters/
+    -- Character Professions above but independent of Knowledge's mute state.
+    local concentrationCharHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    concentrationCharHeader:SetText("Concentration")
+    panel.concentrationCharHeader = concentrationCharHeader
+
+    local concentrationCharSubtitle = content:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+    concentrationCharSubtitle:SetPoint("LEFT", concentrationCharHeader, "RIGHT", 8, 0)
+    concentrationCharSubtitle:SetText("(uncheck to mute a character from the Concentration list forever)")
+
+    local concentrationProfessionHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    concentrationProfessionHeader:SetText("Concentration Professions")
+    panel.concentrationProfessionHeader = concentrationProfessionHeader
+
+    local concentrationProfessionSubtitle = content:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+    concentrationProfessionSubtitle:SetPoint("LEFT", concentrationProfessionHeader, "RIGHT", 8, 0)
+    concentrationProfessionSubtitle:SetText("(uncheck to mute a single profession's Concentration for that character)")
+
+    panel.concentrationProfessionEmpty = content:CreateFontString(nil, "ARTWORK", "GameFontDisable")
+    panel.concentrationProfessionEmpty:SetText("No Concentration discovered yet.")
+    panel.concentrationProfessionEmpty:Hide()
 
     -- Hidden until the Settings frame shows it. Also makes OnShow the single
     -- point where rows are built, rather than it having to run once here too.
