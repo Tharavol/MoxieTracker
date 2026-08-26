@@ -196,10 +196,16 @@ do
     fixtures.reset()
 
     -- The stub's generic StubObject fabricates plain functions for any
-    -- unconfigured field, which ns.RefreshOptions cannot survive indexing
+    -- unconfigured field, which ns.Refresh*Options cannot survive indexing
     -- further (it is UI wiring, not the pure logic this suite targets).
-    -- Forcing IsShown() false keeps every handler below off that path.
-    ns.optionsPanel.IsShown = function() return false end
+    -- Forcing IsShown() false on all three options pages (#41) keeps every
+    -- handler below off that path.
+    ns.generalPanel.IsShown = function() return false end
+    ns.thresholdsPanel.IsShown = function() return false end
+    ns.charactersPanel.IsShown = function() return false end
+    ns.characterProfessionsPanel.IsShown = function() return false end
+    ns.concentrationPanel.IsShown = function() return false end
+    ns.concentrationProfessionsPanel.IsShown = function() return false end
 
     local originalPrint = print
     local printedLines

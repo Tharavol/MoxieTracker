@@ -5,6 +5,11 @@ All notable changes to MoxieTracker are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.1] - 2026-08-26
+
+### Changed
+- The options panel is now six pages instead of one long scroll (#41): a "General" top-level page (login message, window visibility, window positions, tracked currencies), a "Thresholds" page (all eleven color thresholds), and four mute pages -- "Characters", "Character Professions", "Concentration", and "Concentration Professions" -- one per list instead of all four sharing a single "Muting" page. Purely a reorganization -- no settings, thresholds, or mute behavior changed.
+
 ## [1.9.0] - 2026-08-26
 
 ### Added
@@ -301,6 +306,7 @@ during load; that tag was removed and reused for this release.
 - The full GPL-3.0 text, replacing a truncated stub that named the license but
   omitted its terms.
 
+[1.9.1]: https://github.com/Tharavol/MoxieTracker/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/Tharavol/MoxieTracker/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/Tharavol/MoxieTracker/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/Tharavol/MoxieTracker/compare/v1.6.0...v1.7.0

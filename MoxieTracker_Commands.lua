@@ -138,8 +138,25 @@ local function HandleReset(arg1)
         MoxieTrackerDB.thresholds = nil
         MoxieTrackerDB.debugLogging = nil
         ns.frame.pinned = false
-        if ns.optionsPanel:IsShown() then
-            ns.RefreshOptions()
+        -- Three separate pages now (#41); only refresh whichever is
+        -- actually open, same as the old single-page check did.
+        if ns.generalPanel:IsShown() then
+            ns.RefreshGeneralOptions()
+        end
+        if ns.thresholdsPanel:IsShown() then
+            ns.RefreshThresholdsOptions()
+        end
+        if ns.charactersPanel:IsShown() then
+            ns.RefreshCharactersOptions()
+        end
+        if ns.characterProfessionsPanel:IsShown() then
+            ns.RefreshCharacterProfessionsOptions()
+        end
+        if ns.concentrationPanel:IsShown() then
+            ns.RefreshConcentrationOptions()
+        end
+        if ns.concentrationProfessionsPanel:IsShown() then
+            ns.RefreshConcentrationProfessionsOptions()
         end
         ns.RefreshVisibility()
         ns.Print("settings restored to defaults.")
@@ -224,8 +241,8 @@ local COMMANDS = {
         help = {"/moxie showall - unhide every row"},
         handler = function()
             MoxieTrackerDB.hidden = nil
-            if ns.optionsPanel:IsShown() then
-                ns.RefreshOptions()
+            if ns.generalPanel:IsShown() then
+                ns.RefreshGeneralOptions()
             end
             ns.RefreshVisibility()
             ns.Print("every row is visible again.")
