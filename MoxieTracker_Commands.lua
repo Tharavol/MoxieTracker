@@ -275,8 +275,8 @@ local COMMANDS = {
         name = "reset",
         help = {
             "/moxie reset position - move all three windows back to their default positions",
-            "/moxie reset settings - restore hidden rows, muted characters/professions, the Knowledge " ..
-                "Points and Concentration windows, pin state, thresholds and debug logging to defaults"
+            "/moxie reset settings - restore hidden rows, muted characters/professions, the Moxie, Knowledge " ..
+                "Points and Concentration window toggles, pin state, thresholds and debug logging to defaults"
         },
         handler = HandleReset
     },
