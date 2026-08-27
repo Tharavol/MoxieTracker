@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - The Concentration window no longer shows the "/1000" cap alongside each profession's current value (#44) -- every profession shares the same cap, so it was repeated noise rather than information; the current value and projected time-to-cap remain.
+- Reworded several options-panel subtitles (#45): "mute a character ... forever" no longer says "forever" (it read as more permanent than a single checkbox actually is), and every panel's "Choices apply to the whole account." is now "This is a global setting."
 
 ### Fixed
 - The Character Professions options page could show far fewer professions than a character actually had, even for characters that had logged out since the per-profession breakdown shipped (#46). `GetProfessions()` is confirmed to go dark by the time `PLAYER_LOGOUT` fires; a session-local cache already covered that within a single session, but a character whose cache was never warmed before its own logout that session still wrote a permanently empty breakdown, silently dropping it from the options page for good. Learned professions are now also persisted to SavedVariables the moment a live read ever succeeds, so a later session's dropout falls back to that instead of concluding the character has no professions at all.
