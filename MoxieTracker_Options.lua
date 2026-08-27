@@ -218,7 +218,8 @@ end
 --------------------------------------------------------------------------
 
 local OPTIONS_LOGIN_ROW_Y = 0
-local OPTIONS_KNOWLEDGE_WINDOW_ROW_Y = OPTIONS_LOGIN_ROW_Y - OPTIONS_ROW_HEIGHT
+local OPTIONS_MOXIE_ROW_Y = OPTIONS_LOGIN_ROW_Y - OPTIONS_ROW_HEIGHT
+local OPTIONS_KNOWLEDGE_WINDOW_ROW_Y = OPTIONS_MOXIE_ROW_Y - OPTIONS_ROW_HEIGHT
 local OPTIONS_CONCENTRATION_WINDOW_ROW_Y = OPTIONS_KNOWLEDGE_WINDOW_ROW_Y - OPTIONS_ROW_HEIGHT
 
 -- Position section: a header (sharing its row with the X/Y column labels)
@@ -245,6 +246,7 @@ end
 function ns.RefreshGeneralOptions()
     local panel = ns.generalPanel
     panel.loginCheckbox:SetChecked(not MoxieTrackerDB.suppressLoginMessage)
+    panel.moxieCheckbox:SetChecked(not MoxieTrackerDB.hideMoxie)
     panel.knowledgeWindowCheckbox:SetChecked(not MoxieTrackerDB.hideKnowledgeWindow)
     panel.concentrationWindowCheckbox:SetChecked(not MoxieTrackerDB.hideConcentrationWindow)
 
@@ -255,7 +257,7 @@ function ns.RefreshGeneralOptions()
         fields.yEditBox:SetText(y and tostring(y) or "")
     end
 
-    local tracked = ns.CollectTracked(true)
+    local tracked = ns.CollectTracked(true, true)
 
     for _, row in ipairs(panel.rows) do
         row:Hide()
@@ -324,7 +326,7 @@ end
 
 local function CreateGeneralPanel()
     local panel = CreatePanelShell("MoxieTrackerOptionsPanel", "MoxieTracker " .. ns.GetVersion(),
-        "Uncheck a row to hide it from the tracker. Choices apply to the whole account.")
+        "Uncheck a row to hide it from the tracker. This is a global setting.")
     panel.rows = {}
     panel.positionFields = {}
 
@@ -340,6 +342,24 @@ local function CreateGeneralPanel()
         MoxieTrackerDB.suppressLoginMessage = not self:GetChecked()
     end)
     panel.loginCheckbox = loginCheckbox
+
+    -- Master Moxie visibility (#43): global, not per-character -- unchecking
+    -- this hides Moxie from the tracker regardless of the per-profession
+    -- picks on the Moxie Professions page. Those per-profession picks only
+    -- take effect while this stays checked.
+    local moxieCheckbox = CreateFrame("CheckButton", "MoxieTrackerMoxieOption", content, "UICheckButtonTemplate")
+    moxieCheckbox:SetSize(24, 24)
+    moxieCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", 0, OPTIONS_MOXIE_ROW_Y)
+    moxieCheckbox.label = moxieCheckbox:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    moxieCheckbox.label:SetPoint("LEFT", moxieCheckbox, "RIGHT", 4, 0)
+    moxieCheckbox.label:SetText("Show Moxie")
+    moxieCheckbox:SetScript("OnClick", function(self)
+        MoxieTrackerDB.hideMoxie = not self:GetChecked()
+        if ns.frame:IsShown() then
+            ns.UpdateDisplay()
+        end
+    end)
+    panel.moxieCheckbox = moxieCheckbox
 
     -- Separate from muting individual characters/professions: this is the
     -- blunt "I don't want this window at all" off switch, independent of
@@ -402,11 +422,65 @@ local function CreateGeneralPanel()
     -- Tracked-row checkboxes start at OPTIONS_FIRST_ROW_Y; RefreshGeneralOptions
     -- positions each one (row count, so start Y, isn't known until then).
     panel.empty = content:CreateFontString(nil, "ARTWORK", "GameFontDisable")
-    panel.empty:SetText("Nothing to configure yet - open a profession or log in on a character with moxie.")
+    panel.empty:SetText("Nothing to configure yet - open a profession or collect a tracked item.")
     panel.empty:Hide()
 
     panel:SetScript("OnShow", ns.RefreshGeneralOptions)
     ns.generalPanel = panel
+end
+
+--------------------------------------------------------------------------
+-- Moxie Professions subcategory: Moxie's per-profession visibility list
+-- (#43). Global, not per-character -- the master "Show Moxie" checkbox on
+-- General is also global, so there is nothing character-specific to key
+-- this list on. A Moxie profession's hidden state already lives on its
+-- currency ID alone via ns.IsHidden/ns.SetHidden (the same mechanism the
+-- General page's tracked-currency list already used before this page
+-- existed), so this page lists all eleven professions unconditionally
+-- rather than gating on what the currently-logged-in character has
+-- trained the way Character Professions/Concentration Professions do.
+--------------------------------------------------------------------------
+
+local function EnsureMoxieProfessionRow(panel, index)
+    return EnsureListRow(panel, panel.moxieProfessionRows, index, "MoxieTrackerMoxieProfessionOption", function(self)
+        ns.SetHidden(self.entryKey, not self:GetChecked())
+        if ns.frame:IsShown() then
+            ns.UpdateDisplay()
+        end
+    end)
+end
+
+function ns.RefreshMoxieProfessionsOptions()
+    local panel = ns.moxieProfessionsPanel
+    local rowsY = 0 - OPTIONS_HEADER_HEIGHT
+
+    for _, row in ipairs(panel.moxieProfessionRows) do
+        row:Hide()
+    end
+
+    for index, profession in ipairs(ns.MOXIE_PROFESSIONS) do
+        local entryKey = ns.EntryKey(profession.id, nil, nil)
+        local row = EnsureMoxieProfessionRow(panel, index)
+        row.entryKey = entryKey
+        local info = C_CurrencyInfo.GetCurrencyInfo(profession.id)
+        row.label:SetText((info and info.name) or profession.name)
+        row:SetChecked(not ns.IsHidden(entryKey))
+        PositionRow(panel, row, rowsY - ((index - 1) * OPTIONS_ROW_HEIGHT))
+        row:Show()
+    end
+
+    local rowCount = #ns.MOXIE_PROFESSIONS
+    local listBottomY = rowsY - (rowCount * OPTIONS_ROW_HEIGHT)
+    panel.content:SetHeight(math.max(1, -listBottomY + OPTIONS_BOTTOM_MARGIN))
+    panel.scrollFrame:UpdateScrollChildRect()
+end
+
+local function CreateMoxieProfessionsPanel()
+    local panel = CreatePanelShell("MoxieTrackerMoxieProfessionsPanel", "Moxie Professions",
+        "Uncheck to hide a single profession's Moxie from the tracker. This is a global setting.")
+    panel.moxieProfessionRows = {}
+    panel:SetScript("OnShow", ns.RefreshMoxieProfessionsOptions)
+    ns.moxieProfessionsPanel = panel
 end
 
 --------------------------------------------------------------------------
@@ -438,7 +512,7 @@ end
 
 local function CreateThresholdsPanel()
     local panel = CreatePanelShell("MoxieTrackerThresholdsPanel", "Thresholds",
-        "Color thresholds for every tracked currency. Choices apply to the whole account.")
+        "Color thresholds for every tracked currency. This is a global setting.")
     panel.concentrationThresholdEditBoxes = {}
 
     local content = panel.content
@@ -573,7 +647,7 @@ end
 
 local function CreateCharactersPanel()
     local panel = CreatePanelShell("MoxieTrackerCharactersPanel", "Characters",
-        "Uncheck to mute a character from the Knowledge Points list forever. Choices apply to the whole account.")
+        "Uncheck to mute a character from the Knowledge Points list. This is a global setting.")
     panel.charRows = {}
     panel:SetScript("OnShow", ns.RefreshCharactersOptions)
     ns.charactersPanel = panel
@@ -632,7 +706,7 @@ end
 
 local function CreateCharacterProfessionsPanel()
     local panel = CreatePanelShell("MoxieTrackerCharacterProfessionsPanel", "Character Professions",
-        "Uncheck to mute a single profession's Knowledge for that character. Choices apply to the whole account.")
+        "Uncheck to mute a single profession's Knowledge for that character. This is a global setting.")
     panel.professionRows = {}
     panel.empty = panel.content:CreateFontString(nil, "ARTWORK", "GameFontDisable")
     panel.empty:SetText("No profession Knowledge recorded yet.")
@@ -683,7 +757,7 @@ end
 
 local function CreateConcentrationPanel()
     local panel = CreatePanelShell("MoxieTrackerConcentrationPanel", "Concentration",
-        "Uncheck to mute a character from the Concentration list forever. Choices apply to the whole account.")
+        "Uncheck to mute a character from the Concentration list. This is a global setting.")
     panel.concentrationCharRows = {}
     panel:SetScript("OnShow", ns.RefreshConcentrationOptions)
     ns.concentrationPanel = panel
@@ -739,8 +813,7 @@ end
 
 local function CreateConcentrationProfessionsPanel()
     local panel = CreatePanelShell("MoxieTrackerConcentrationProfessionsPanel", "Concentration Professions",
-        "Uncheck to mute a single profession's Concentration for that character. Choices apply to the whole " ..
-            "account.")
+        "Uncheck to mute a single profession's Concentration for that character. This is a global setting.")
     panel.concentrationProfessionRows = {}
     panel.empty = panel.content:CreateFontString(nil, "ARTWORK", "GameFontDisable")
     panel.empty:SetText("No Concentration discovered yet.")
@@ -754,6 +827,7 @@ end
 --------------------------------------------------------------------------
 
 CreateGeneralPanel()
+CreateMoxieProfessionsPanel()
 CreateThresholdsPanel()
 CreateCharactersPanel()
 CreateCharacterProfessionsPanel()
@@ -764,6 +838,7 @@ if Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterCanva
     and Settings.RegisterAddOnCategory then
     generalCategory = Settings.RegisterCanvasLayoutCategory(ns.generalPanel, "MoxieTracker")
     Settings.RegisterAddOnCategory(generalCategory)
+    Settings.RegisterCanvasLayoutSubcategory(generalCategory, ns.moxieProfessionsPanel, "Moxie Professions")
     Settings.RegisterCanvasLayoutSubcategory(generalCategory, ns.thresholdsPanel, "Thresholds")
     Settings.RegisterCanvasLayoutSubcategory(generalCategory, ns.charactersPanel, "Characters")
     Settings.RegisterCanvasLayoutSubcategory(generalCategory, ns.characterProfessionsPanel, "Character Professions")

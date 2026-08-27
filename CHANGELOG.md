@@ -5,6 +5,11 @@ All notable changes to MoxieTracker are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.4] - 2026-08-27
+
+### Added
+- A "Show Moxie" checkbox on the General options page hides Moxie from the tracker entirely, as a global setting independent of any character (#43). Individual professions' Moxie now has its own "Moxie Professions" page, moved off the General page's flat tracked-currency list, so a profession can be hidden without needing to log into a character who has it -- the visibility choice is account-wide, matching how it already worked under the hood.
+
 ## [1.9.3] - 2026-08-26
 
 ### Fixed
@@ -318,6 +323,7 @@ during load; that tag was removed and reused for this release.
 - The full GPL-3.0 text, replacing a truncated stub that named the license but
   omitted its terms.
 
+[1.9.4]: https://github.com/Tharavol/MoxieTracker/compare/v1.9.3...v1.9.4
 [1.9.3]: https://github.com/Tharavol/MoxieTracker/compare/v1.9.2...v1.9.3
 [1.9.2]: https://github.com/Tharavol/MoxieTracker/compare/v1.9.1...v1.9.2
 [1.9.1]: https://github.com/Tharavol/MoxieTracker/compare/v1.9.0...v1.9.1

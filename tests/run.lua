@@ -273,6 +273,7 @@ do
     MoxieTrackerDB.hidden = { ["currency:9999"] = true }
     ns.SetCharacterMuted("Borin-Stormrage", true)
     ns.SetConcentrationProfessionMuted("Borin-Stormrage", "Alchemy", true)
+    MoxieTrackerDB.hideMoxie = true
     MoxieTrackerDB.hideKnowledgeWindow = true
     MoxieTrackerDB.hideConcentrationWindow = true
     MoxieTrackerDB.thresholds = { moxie = 700 }
@@ -286,6 +287,7 @@ do
         MoxieTrackerDB.mutedConcentrationCharacters, nil)
     assertEqual("reset settings clears muted concentration professions",
         MoxieTrackerDB.mutedConcentrationProfessions, nil)
+    assertEqual("reset settings clears the master Moxie toggle", MoxieTrackerDB.hideMoxie, nil)
     assertEqual("reset settings clears the Knowledge Points window toggle", MoxieTrackerDB.hideKnowledgeWindow, nil)
     assertEqual("reset settings clears the Concentration window toggle", MoxieTrackerDB.hideConcentrationWindow, nil)
     assertEqual("reset settings clears threshold overrides", MoxieTrackerDB.thresholds, nil)
@@ -1136,6 +1138,39 @@ do
     local tracked = ns.CollectTracked()
     check("an untrained profession's Moxie does not leak through the keyword fallback",
         findByName(tracked, "Artisan Miner's Moxie") == nil)
+end
+
+--------------------------------------------------------------------------
+-- 15c. Master "Show Moxie" toggle and the General page's Moxie exclusion
+-- (#43). MoxieTrackerDB.hideMoxie hides every Moxie row from the live
+-- tracker regardless of any individual profession's own hidden state; the
+-- General options page's tracked-currency list no longer lists Moxie rows
+-- at all (they moved to the Moxie Professions page), independent of the
+-- master toggle.
+--------------------------------------------------------------------------
+do
+    fixtures.reset()
+    fixtures.setCharacter("Alaria", "Stormrage")
+    fixtures.setCurrency(3256, "Artisan Alchemist's Moxie", 60) -- Alchemy
+    fixtures.setOpenProfession(100, Enum.Profession.Alchemy, 0)
+    fixtures.setLearnedProfessions(100)
+
+    local tracked = ns.CollectTracked()
+    check("Moxie shows by default", findByName(tracked, "Artisan Alchemist's Moxie") ~= nil)
+
+    MoxieTrackerDB.hideMoxie = true
+    local hiddenByMaster = ns.CollectTracked()
+    check("the master toggle hides Moxie from the live tracker regardless of the per-profession pick",
+        findByName(hiddenByMaster, "Artisan Alchemist's Moxie") == nil)
+
+    local hiddenByMasterIncludeHidden = ns.CollectTracked(true)
+    check("the master toggle hides Moxie even when includeHidden is requested",
+        findByName(hiddenByMasterIncludeHidden, "Artisan Alchemist's Moxie") == nil)
+
+    MoxieTrackerDB.hideMoxie = nil
+    local generalList = ns.CollectTracked(true, true)
+    check("the General page's excludeMoxie argument drops Moxie rows even though the master toggle is off",
+        findByName(generalList, "Artisan Alchemist's Moxie") == nil)
 end
 
 --------------------------------------------------------------------------

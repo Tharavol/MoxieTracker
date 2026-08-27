@@ -60,8 +60,13 @@ function ns.GetCurrencyIDForIndex(index)
 end
 
 -- `includeHidden` is for the options panel, which has to list the rows the user
--- has switched off in order to offer switching them back on.
-function ns.CollectTracked(includeHidden)
+-- has switched off in order to offer switching them back on. `excludeMoxie`
+-- is for the General page's own tracked-currency list (#43): individual
+-- Moxie professions now have their own "Moxie Professions" page, so General
+-- no longer lists them even with includeHidden set -- the live tracker
+-- window (which calls this with neither argument) still needs Pass 2 below
+-- to get Moxie at all.
+function ns.CollectTracked(includeHidden, excludeMoxie)
     local tracked = {}
     local seenID, seenItemID, seenName = {}, {}, {}
 
@@ -112,11 +117,16 @@ function ns.CollectTracked(includeHidden)
     -- applied to Concentration and for the same reason: GetCurrencyInfo
     -- returns a valid nonzero quantity for a Moxie currency ID any
     -- character on the account has ever earned, not just ones the CURRENT
-    -- character has trained.
-    for _, profession in ipairs(ns.MOXIE_PROFESSIONS) do
-        local info = C_CurrencyInfo.GetCurrencyInfo(profession.id)
-        if info and info.name and (info.quantity or 0) > 0 and ns.IsProfessionLearned(profession.enum) then
-            Add(profession.id, nil, info.name, info.quantity)
+    -- character has trained. Also gated on the master "Show Moxie" toggle
+    -- (#43) and skipped outright when the caller excludes Moxie (the
+    -- General options page, which now points at the dedicated Moxie
+    -- Professions page instead).
+    if not excludeMoxie and not MoxieTrackerDB.hideMoxie then
+        for _, profession in ipairs(ns.MOXIE_PROFESSIONS) do
+            local info = C_CurrencyInfo.GetCurrencyInfo(profession.id)
+            if info and info.name and (info.quantity or 0) > 0 and ns.IsProfessionLearned(profession.enum) then
+                Add(profession.id, nil, info.name, info.quantity)
+            end
         end
     end
 

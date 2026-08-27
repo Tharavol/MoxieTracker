@@ -133,6 +133,7 @@ local function HandleReset(arg1)
         MoxieTrackerDB.mutedProfessions = nil
         MoxieTrackerDB.mutedConcentrationCharacters = nil
         MoxieTrackerDB.mutedConcentrationProfessions = nil
+        MoxieTrackerDB.hideMoxie = nil
         MoxieTrackerDB.hideKnowledgeWindow = nil
         MoxieTrackerDB.hideConcentrationWindow = nil
         MoxieTrackerDB.thresholds = nil
@@ -142,6 +143,9 @@ local function HandleReset(arg1)
         -- actually open, same as the old single-page check did.
         if ns.generalPanel:IsShown() then
             ns.RefreshGeneralOptions()
+        end
+        if ns.moxieProfessionsPanel:IsShown() then
+            ns.RefreshMoxieProfessionsOptions()
         end
         if ns.thresholdsPanel:IsShown() then
             ns.RefreshThresholdsOptions()
@@ -205,6 +209,7 @@ local function PrintStatus()
     ns.Print("Concentration mutes: %d character(s), %d profession(s)",
         CountFlat("mutedConcentrationCharacters"), CountNested("mutedConcentrationProfessions"))
 
+    ns.Print("Moxie: %s", MoxieTrackerDB.hideMoxie and "hidden" or "shown")
     ns.Print("Knowledge Points window: %s", MoxieTrackerDB.hideKnowledgeWindow and "hidden" or "shown")
     ns.Print("Concentration window: %s", MoxieTrackerDB.hideConcentrationWindow and "hidden" or "shown")
 
