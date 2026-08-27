@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - A "Show Moxie" checkbox on the General options page hides Moxie from the tracker entirely, as a global setting independent of any character (#43). Individual professions' Moxie now has its own "Moxie Professions" page, moved off the General page's flat tracked-currency list, so a profession can be hidden without needing to log into a character who has it -- the visibility choice is account-wide, matching how it already worked under the hood.
 
+### Changed
+- The Concentration window no longer shows the "/1000" cap alongside each profession's current value (#44) -- every profession shares the same cap, so it was repeated noise rather than information; the current value and projected time-to-cap remain.
+
 ### Fixed
 - The Character Professions options page could show far fewer professions than a character actually had, even for characters that had logged out since the per-profession breakdown shipped (#46). `GetProfessions()` is confirmed to go dark by the time `PLAYER_LOGOUT` fires; a session-local cache already covered that within a single session, but a character whose cache was never warmed before its own logout that session still wrote a permanently empty breakdown, silently dropping it from the options page for good. Learned professions are now also persisted to SavedVariables the moment a live read ever succeeds, so a later session's dropout falls back to that instead of concluding the character has no professions at all.
 

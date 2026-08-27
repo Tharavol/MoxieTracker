@@ -374,9 +374,9 @@ function ns.UpdateConcentrationDisplay()
             RenderLine(string.format("%s%s|r", ns.WHITE, entry.name))
             for _, profession in ipairs(entry.professions) do
                 local color = ns.GetConcentrationColor(profession.name, profession.current, profession.maxQuantity)
-                RenderLine(string.format("%s%s%s|r: %s%d/%d|r (%s)",
+                RenderLine(string.format("%s%s%s|r: %s%d|r (%s)",
                     INDENT, ns.WHITE, profession.name,
-                    color, profession.current, profession.maxQuantity,
+                    color, profession.current,
                     ns.FormatDuration(profession.secondsUntilCap)))
             end
         end
