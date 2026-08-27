@@ -321,8 +321,12 @@ do
     fixtures.setCharacter("Alaria", "Stormrage")
 
     -- Only three of the eleven professions have any unspent Knowledge; the
-    -- other eight report no currency info at all, matching a character who
-    -- hasn't touched those professions.
+    -- other eight are never learned, matching a character who hasn't
+    -- touched those professions.
+    fixtures.setOpenProfession(100, Enum.Profession.Alchemy, 0)
+    fixtures.setOpenProfession(101, Enum.Profession.Mining, 0)
+    fixtures.setOpenProfession(102, Enum.Profession.Tailoring, 0)
+    fixtures.setLearnedProfessions(100, 101, 102)
     fixtures.setCurrency(3150, "Alchemy Knowledge", 3) -- Alchemy
     fixtures.setCurrency(3158, "Mining Knowledge", 5)  -- Mining
     fixtures.setCurrency(3160, "Tailoring Knowledge", 2) -- Tailoring
@@ -341,6 +345,8 @@ end
 do
     fixtures.reset()
     fixtures.setCharacter("Alaria", "Stormrage")
+    fixtures.setOpenProfession(100, Enum.Profession.Alchemy, 0)
+    fixtures.setLearnedProfessions(100)
     fixtures.setCurrency(3150, "Alchemy Knowledge", 7)
 
     local key, name = ns.GetCharacterKey()
@@ -366,6 +372,8 @@ do
     }
 
     fixtures.setCharacter("Alaria", "Stormrage")
+    fixtures.setOpenProfession(100, Enum.Profession.Alchemy, 0)
+    fixtures.setLearnedProfessions(100)
     fixtures.setCurrency(3150, "Alchemy Knowledge", 4)
 
     local roster = ns.CollectKnowledgeRoster()
@@ -386,11 +394,58 @@ do
     MoxieTrackerDB.knowledge = {
         ["Alaria-Stormrage"] = { name = "Alaria", points = 5 },
     }
+    fixtures.setOpenProfession(100, Enum.Profession.Alchemy, 0)
+    fixtures.setLearnedProfessions(100)
     fixtures.setCurrency(3150, "Alchemy Knowledge", 9)
 
     local roster = ns.CollectKnowledgeRoster()
     assertEqual("the current character's roster entry is live, not the stale snapshot",
         roster[1].points, 9)
+end
+
+--------------------------------------------------------------------------
+-- 6b. Zero-point trained professions stay visible for muting (#42
+-- follow-up). ns.CollectUnspentKnowledgeByProfession() filters zero-point
+-- professions out for the floating window's own display, but that same
+-- filtering used to be baked into the shared collector, so the Character
+-- Professions options page (which lists a profession specifically to offer
+-- muting it, whether or not it currently has unspent points) never saw a
+-- trained profession sitting at 0 -- the exact bug reported: "the list on
+-- character professions seems very short." ns.CollectKnowledgeByProfession()
+-- is now the zero-inclusive source of truth; the unspent-only collector is a
+-- thin >0 filter over it.
+--------------------------------------------------------------------------
+do
+    fixtures.reset()
+    fixtures.setCharacter("Alaria", "Stormrage")
+    fixtures.setOpenProfession(100, Enum.Profession.Alchemy, 0)
+    fixtures.setOpenProfession(101, Enum.Profession.Mining, 0)
+    fixtures.setLearnedProfessions(100, 101)
+    fixtures.setCurrency(3150, "Alchemy Knowledge", 3) -- Alchemy: has unspent points
+    fixtures.setCurrency(3158, "Mining Knowledge", 0)  -- Mining: trained, but 0 unspent
+
+    local byProfession = ns.CollectKnowledgeByProfession()
+    assertEqual("the zero-inclusive collector lists every trained profession", #byProfession, 2)
+    assertEqual("first entry is name-sorted", byProfession[1].name, "Alchemy")
+    assertEqual("second entry is the zero-point one", byProfession[2].name, "Mining")
+    assertEqual("the zero-point profession really does carry 0", byProfession[2].points, 0)
+
+    local unspentOnly = ns.CollectUnspentKnowledgeByProfession()
+    assertEqual("the display-only filter still excludes the zero-point profession", #unspentOnly, 1)
+    assertEqual("...leaving only the one with unspent points", unspentOnly[1].name, "Alchemy")
+
+    ns.SnapshotKnowledge()
+    local key = ns.GetCharacterKey()
+    local saved = MoxieTrackerDB.knowledge[key].professions
+    assertEqual("a fresh snapshot persists the zero-point profession too", #saved, 2)
+
+    local roster = ns.CollectKnowledgeProfessionRoster()
+    local names = {}
+    for _, row in ipairs(roster) do
+        names[row.professionName] = true
+    end
+    check("the options-panel roster offers the zero-point profession for muting",
+        names["Mining"] == true)
 end
 
 --------------------------------------------------------------------------
@@ -417,6 +472,8 @@ do
     ns.SetCharacterMuted("Borin-Stormrage", true)
 
     fixtures.setCharacter("Alaria", "Stormrage")
+    fixtures.setOpenProfession(100, Enum.Profession.Alchemy, 0)
+    fixtures.setLearnedProfessions(100)
     fixtures.setCurrency(3150, "Alchemy Knowledge", 4)
 
     local roster = ns.CollectKnowledgeRoster()
@@ -501,6 +558,9 @@ end
 do
     fixtures.reset()
     fixtures.setCharacter("Tharavol", "Stormrage")
+    fixtures.setOpenProfession(100, Enum.Profession.Engineering, 0)
+    fixtures.setOpenProfession(101, Enum.Profession.Tailoring, 0)
+    fixtures.setLearnedProfessions(100, 101)
     fixtures.setCurrency(3153, "Engineering Knowledge", 2) -- Engineering
     fixtures.setCurrency(3160, "Tailoring Knowledge", 2)   -- Tailoring
 
@@ -559,6 +619,9 @@ end
 do
     fixtures.reset()
     fixtures.setCharacter("Tharavol", "Stormrage")
+    fixtures.setOpenProfession(100, Enum.Profession.Engineering, 0)
+    fixtures.setOpenProfession(101, Enum.Profession.Tailoring, 0)
+    fixtures.setLearnedProfessions(100, 101)
     fixtures.setCurrency(3153, "Engineering Knowledge", 2) -- Engineering
     fixtures.setCurrency(3160, "Tailoring Knowledge", 3)   -- Tailoring
 
@@ -629,6 +692,9 @@ end
 do
     fixtures.reset()
     fixtures.setCharacter("Tharavol", "Stormrage")
+    fixtures.setOpenProfession(100, Enum.Profession.Engineering, 0)
+    fixtures.setOpenProfession(101, Enum.Profession.Tailoring, 0)
+    fixtures.setLearnedProfessions(100, 101)
     fixtures.setCurrency(3153, "Engineering Knowledge", 2)
     fixtures.setCurrency(3160, "Tailoring Knowledge", 3)
 
@@ -1042,6 +1108,34 @@ do
     check("only the learned profession's Moxie appears",
         findByName(trackedAfter, "Artisan Engineer's Moxie") ~= nil
         and findByName(trackedAfter, "Artisan Alchemist's Moxie") == nil)
+end
+
+--------------------------------------------------------------------------
+-- 15b. Moxie profession gating, Pass 4 (#42 follow-up). Pass 2's
+-- IsProfessionLearned gate above only covers currencies reached through
+-- GetCurrencyInfo(id); Pass 4's keyword fallback walks the full currency
+-- list independently and, before this fix, had no gate of its own -- so a
+-- profession's Moxie that Pass 2 correctly excluded reappeared anyway once
+-- it showed up in the currency list (which happens account-wide, the same
+-- way Pass 2's leak did). Reported live in-game as "orphaned" Moxie rows in
+-- the General options page's tracked-currency list.
+--------------------------------------------------------------------------
+do
+    fixtures.reset()
+    fixtures.setCharacter("Alaria", "Stormrage")
+    -- Mining's Moxie currency (3264) is visible in the account-wide currency
+    -- list -- some other character earned it -- but Alaria has never trained
+    -- Mining. Pass 2 already excludes it by ID; this drives it through the
+    -- keyword-fallback path instead, which used to have no such exclusion.
+    fixtures.setCurrencyList({
+        { id = 3264, name = "Artisan Miner's Moxie", quantity = 80 },
+    })
+    fixtures.setOpenProfession(100, Enum.Profession.Engineering, 0)
+    fixtures.setLearnedProfessions(100)
+
+    local tracked = ns.CollectTracked()
+    check("an untrained profession's Moxie does not leak through the keyword fallback",
+        findByName(tracked, "Artisan Miner's Moxie") == nil)
 end
 
 --------------------------------------------------------------------------

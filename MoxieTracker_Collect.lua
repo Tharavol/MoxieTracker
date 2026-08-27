@@ -129,12 +129,23 @@ function ns.CollectTracked(includeHidden)
     end
 
     -- Pass 4: keyword fallback over the currency list, for anything matching
-    -- that neither ID table knows about yet.
+    -- that neither ID table knows about yet. A Moxie currency ID is
+    -- excluded here even if it matches by keyword: Pass 2 above already
+    -- made the deliberate, profession-gated call on every ID in
+    -- MOXIE_ID_SET, and this currency list walk has no way to repeat that
+    -- gating (it has no profession to check against) -- without the
+    -- exclusion, a profession's Moxie that Pass 2 correctly left out for a
+    -- character who never trained it would reappear here anyway, since the
+    -- currency is still visible in the full list account-wide once any
+    -- character has earned it (the same leak Pass 2 exists to close).
     local size = C_CurrencyInfo.GetCurrencyListSize and C_CurrencyInfo.GetCurrencyListSize() or 0
     for index = 1, size do
         local info = C_CurrencyInfo.GetCurrencyListInfo(index)
         if IsTrackedCurrency(info) then
-            Add(ns.GetCurrencyIDForIndex(index), nil, info.name, info.quantity)
+            local currencyID = ns.GetCurrencyIDForIndex(index)
+            if not (currencyID and MOXIE_ID_SET[currencyID]) then
+                Add(currencyID, nil, info.name, info.quantity)
+            end
         end
     end
 
@@ -149,23 +160,45 @@ end
 -- Knowledge points roster (#38)
 --------------------------------------------------------------------------------
 
--- Unspent Midnight Knowledge for the current character, broken down by
--- profession and name-sorted. A profession the character doesn't have simply
--- reports no currency info, so this doesn't need to know which professions
--- actually exist for them; professions at 0 are left out, the same "don't
--- show what isn't there" rule the roster applies to whole characters.
-function ns.CollectUnspentKnowledgeByProfession()
+-- Unspent Midnight Knowledge for every profession the current character has
+-- actually trained (ns.IsProfessionLearned), name-sorted, including one
+-- currently sitting at 0 points. Gated the same way #40/#42 already gate
+-- Concentration and Moxie: C_CurrencyInfo.GetCurrencyInfo returns a valid
+-- struct for a Knowledge currency ID once any character on the account has
+-- earned it, not just the current character, so an ungated read could
+-- attribute a profession's Knowledge to a character who never trained it.
+-- This is the source of truth ns.CollectUnspentKnowledgeByProfession below
+-- and ns.SnapshotKnowledge both read from; the options panel's Character
+-- Professions page (#42 follow-up) reads it directly, since a mute row
+-- needs to be available for a trained profession before it has ever earned
+-- a point, not just once it has.
+function ns.CollectKnowledgeByProfession()
     local list = {}
     for _, profession in ipairs(ns.KNOWLEDGE_PROFESSIONS) do
-        local info = C_CurrencyInfo.GetCurrencyInfo(profession.id)
-        local points = info and (info.quantity or 0) or 0
-        if points > 0 then
-            table.insert(list, { name = profession.name, points = points })
+        if ns.IsProfessionLearned(profession.enum) then
+            local info = C_CurrencyInfo.GetCurrencyInfo(profession.id)
+            table.insert(list, { name = profession.name, points = info and (info.quantity or 0) or 0 })
         end
     end
     table.sort(list, function(a, b)
         return a.name < b.name
     end)
+    return list
+end
+
+-- Unspent Midnight Knowledge for the current character, broken down by
+-- profession and name-sorted, dropping any profession currently at 0 -- the
+-- "don't show what isn't there" rule the live tracker window and roster
+-- apply throughout. See ns.CollectKnowledgeByProfession above, the gated
+-- source of truth this filters, for why the gate on trained professions
+-- exists.
+function ns.CollectUnspentKnowledgeByProfession()
+    local list = {}
+    for _, profession in ipairs(ns.CollectKnowledgeByProfession()) do
+        if profession.points > 0 then
+            table.insert(list, profession)
+        end
+    end
     return list
 end
 
@@ -186,10 +219,15 @@ end
 -- at a time as each alt logs out, which is the whole "accumulation"
 -- mechanism the issue asks for. The per-profession breakdown is saved
 -- alongside the total so another character's roster entry can show it too,
--- not just the current one's.
+-- not just the current one's -- including a trained profession still
+-- sitting at 0 points (#42 follow-up), so an offline character's Character
+-- Professions options row is available for muting without needing to log
+-- back in first. ns.UpdateKnowledgeDisplay (the live window) filters those
+-- back out at render time, so this does not change what the floating
+-- window shows -- only what's available to the options panel.
 function ns.SnapshotKnowledge()
     local key, name = ns.GetCharacterKey()
-    local professions = ns.CollectUnspentKnowledgeByProfession()
+    local professions = ns.CollectKnowledgeByProfession()
     local total = 0
     for _, profession in ipairs(professions) do
         total = total + profession.points
@@ -279,11 +317,17 @@ function ns.CollectKnowledgeRoster(includeMuted)
 end
 
 -- Flat character+profession list for the options panel's profession-mute
--- section, one row per profession any character has ever recorded unspent
--- Knowledge in -- muted or not, same "show it anyway so there's a way to
--- un-mute it" reasoning as CollectKnowledgeRoster's includeMuted. A fully
--- muted character is skipped entirely: its roster line never renders, so
--- per-profession controls for it would have nothing to affect.
+-- section, one row per profession any character has actually trained --
+-- muted or not, and regardless of whether it currently holds any unspent
+-- points (#42 follow-up: the mute control needs to exist before the
+-- profession has ever earned a point, not just once it has), same "show it
+-- anyway so there's a way to un-mute it" reasoning as CollectKnowledgeRoster's
+-- includeMuted. Reads ns.CollectKnowledgeByProfession for the current
+-- character (the gated, zero-inclusive source of truth) rather than
+-- ns.CollectUnspentKnowledgeByProfession, which is display-only and would
+-- drop a zero-point profession's row entirely. A fully muted character is
+-- skipped entirely: its roster line never renders, so per-profession
+-- controls for it would have nothing to affect.
 function ns.CollectKnowledgeProfessionRoster()
     local currentKey, currentName = ns.GetCharacterKey()
     local list = {}
@@ -303,7 +347,7 @@ function ns.CollectKnowledgeProfessionRoster()
         end
     end
 
-    AddCharacter(currentKey, currentName, ns.CollectUnspentKnowledgeByProfession())
+    AddCharacter(currentKey, currentName, ns.CollectKnowledgeByProfession())
 
     for key, entry in pairs(MoxieTrackerDB.knowledge or {}) do
         if key ~= currentKey then

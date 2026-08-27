@@ -307,8 +307,17 @@ function ns.UpdateKnowledgeDisplay()
             if entry.professions then
                 RenderLine(string.format("%s%s|r", ns.WHITE, entry.name))
                 for _, profession in ipairs(entry.professions) do
-                    RenderLine(string.format("%s%s%s|r: %s%d|r",
-                        INDENT, ns.WHITE, profession.name, ns.GREEN, profession.points))
+                    -- A stored entry can now include a trained profession
+                    -- sitting at 0 points (#42 follow-up: SnapshotKnowledge
+                    -- persists every trained profession, not just ones with
+                    -- unspent points, so the options panel can offer muting
+                    -- one before it has earned anything). Filtered back out
+                    -- here so the floating window's own "don't show what
+                    -- isn't there" behavior is unchanged.
+                    if profession.points > 0 then
+                        RenderLine(string.format("%s%s%s|r: %s%d|r",
+                            INDENT, ns.WHITE, profession.name, ns.GREEN, profession.points))
+                    end
                 end
             else
                 RenderLine(string.format("%s%s|r: %s%d|r", ns.WHITE, entry.name, ns.GREEN, entry.points))

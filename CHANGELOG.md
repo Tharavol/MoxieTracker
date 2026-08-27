@@ -5,6 +5,12 @@ All notable changes to MoxieTracker are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.3] - 2026-08-26
+
+### Fixed
+- A profession's Moxie could still show up as an "orphaned" row in the General options page's tracked-currency list even after #42 (v1.9.2), because Pass 2's `IsProfessionLearned` gate only covered Moxie currencies looked up by ID -- the keyword-fallback pass that scans the full currency list for anything not yet in the known-ID table had no gate of its own, so an untrained profession's Moxie reappeared through that path instead (#42 follow-up).
+- The Character Professions options page listed far fewer professions than a character actually had, because the same collector used both for that page and for the floating Knowledge window's live display filtered out any profession sitting at 0 unspent points -- correct for the floating window (nothing to show), wrong for the options page, which needs to offer muting a trained profession before it has earned anything. A trained profession at 0 points now stays visible in storage and in the options page; the floating window's own display keeps filtering zero-point professions out (#42 follow-up).
+
 ## [1.9.2] - 2026-08-26
 
 ### Fixed
@@ -312,6 +318,7 @@ during load; that tag was removed and reused for this release.
 - The full GPL-3.0 text, replacing a truncated stub that named the license but
   omitted its terms.
 
+[1.9.3]: https://github.com/Tharavol/MoxieTracker/compare/v1.9.2...v1.9.3
 [1.9.2]: https://github.com/Tharavol/MoxieTracker/compare/v1.9.1...v1.9.2
 [1.9.1]: https://github.com/Tharavol/MoxieTracker/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/Tharavol/MoxieTracker/compare/v1.8.0...v1.9.0

@@ -98,19 +98,25 @@ end
 -- unspent Midnight Knowledge, confirmed in-game (#38). Named per profession,
 -- not just a bare ID list, because the Knowledge Points roster breaks a
 -- character's total down per profession when they hold points in more than
--- one (ns.CollectUnspentKnowledgeByProfession in the Collect file).
+-- one (ns.CollectUnspentKnowledgeByProfession in the Collect file). `enum`
+-- (Enum.Profession) is used by ns.CollectKnowledgeByProfession (#42
+-- follow-up) to list a profession the character has actually trained even
+-- while its points sit at 0 -- the options panel's Character Professions
+-- mute list needs that row available before the profession has ever earned
+-- a point, the same reasoning MOXIE_PROFESSIONS/CONCENTRATION_PROFESSIONS
+-- already follow for their own enum field.
 ns.KNOWLEDGE_PROFESSIONS = {
-    { id = 3150, name = "Alchemy" },
-    { id = 3151, name = "Blacksmithing" },
-    { id = 3152, name = "Enchanting" },
-    { id = 3153, name = "Engineering" },
-    { id = 3154, name = "Herbalism" },
-    { id = 3155, name = "Inscription" },
-    { id = 3156, name = "Jewelcrafting" },
-    { id = 3157, name = "Leatherworking" },
-    { id = 3158, name = "Mining" },
-    { id = 3159, name = "Skinning" },
-    { id = 3160, name = "Tailoring" },
+    { id = 3150, enum = Enum.Profession.Alchemy, name = "Alchemy" },
+    { id = 3151, enum = Enum.Profession.Blacksmithing, name = "Blacksmithing" },
+    { id = 3152, enum = Enum.Profession.Enchanting, name = "Enchanting" },
+    { id = 3153, enum = Enum.Profession.Engineering, name = "Engineering" },
+    { id = 3154, enum = Enum.Profession.Herbalism, name = "Herbalism" },
+    { id = 3155, enum = Enum.Profession.Inscription, name = "Inscription" },
+    { id = 3156, enum = Enum.Profession.Jewelcrafting, name = "Jewelcrafting" },
+    { id = 3157, enum = Enum.Profession.Leatherworking, name = "Leatherworking" },
+    { id = 3158, enum = Enum.Profession.Mining, name = "Mining" },
+    { id = 3159, enum = Enum.Profession.Skinning, name = "Skinning" },
+    { id = 3160, enum = Enum.Profession.Tailoring, name = "Tailoring" },
 }
 
 -- Crafter's Concentration (#40) has no static currency ID to list here the
