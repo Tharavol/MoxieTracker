@@ -137,6 +137,7 @@ local function HandleReset(arg1)
         MoxieTrackerDB.hideKnowledgeWindow = nil
         MoxieTrackerDB.hideConcentrationWindow = nil
         MoxieTrackerDB.thresholds = nil
+        MoxieTrackerDB.hideConcentrationUnderThreshold = nil
         MoxieTrackerDB.debugLogging = nil
         ns.frame.pinned = false
         -- Three separate pages now (#41); only refresh whichever is
@@ -212,6 +213,8 @@ local function PrintStatus()
     ns.Print("Moxie: %s", MoxieTrackerDB.hideMoxie and "hidden" or "shown")
     ns.Print("Knowledge Points window: %s", MoxieTrackerDB.hideKnowledgeWindow and "hidden" or "shown")
     ns.Print("Concentration window: %s", MoxieTrackerDB.hideConcentrationWindow and "hidden" or "shown")
+    ns.Print("Concentration values under threshold: %s",
+        MoxieTrackerDB.hideConcentrationUnderThreshold and "hidden" or "shown")
 
     if MoxieTrackerDB.thresholds then
         local parts = {}
@@ -276,7 +279,8 @@ local COMMANDS = {
         help = {
             "/moxie reset position - move all three windows back to their default positions",
             "/moxie reset settings - restore hidden rows, muted characters/professions, the Moxie, Knowledge " ..
-                "Points and Concentration window toggles, pin state, thresholds and debug logging to defaults"
+                "Points and Concentration window toggles, pin state, thresholds, the Concentration " ..
+                "under-threshold display toggle, and debug logging to defaults"
         },
         handler = HandleReset
     },

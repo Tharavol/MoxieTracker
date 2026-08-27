@@ -492,7 +492,8 @@ end
 --------------------------------------------------------------------------
 
 local OPTIONS_THRESHOLD_HEADER_Y = 0
-local OPTIONS_THRESHOLD_UA_ROW_Y = OPTIONS_THRESHOLD_HEADER_Y - OPTIONS_HEADER_HEIGHT
+local OPTIONS_THRESHOLD_HIDE_ROW_Y = OPTIONS_THRESHOLD_HEADER_Y - OPTIONS_HEADER_HEIGHT
+local OPTIONS_THRESHOLD_UA_ROW_Y = OPTIONS_THRESHOLD_HIDE_ROW_Y - OPTIONS_ROW_HEIGHT
 local OPTIONS_THRESHOLD_MOXIE_ROW_Y = OPTIONS_THRESHOLD_UA_ROW_Y - OPTIONS_ROW_HEIGHT
 local OPTIONS_THRESHOLD_FV_ROW_Y = OPTIONS_THRESHOLD_MOXIE_ROW_Y - OPTIONS_ROW_HEIGHT
 local OPTIONS_THRESHOLD_CONCENTRATION_FIRST_Y = OPTIONS_THRESHOLD_FV_ROW_Y - OPTIONS_ROW_HEIGHT
@@ -501,6 +502,7 @@ local OPTIONS_THRESHOLD_RESET_Y = OPTIONS_THRESHOLD_CONCENTRATION_FIRST_Y
 
 function ns.RefreshThresholdsOptions()
     local panel = ns.thresholdsPanel
+    panel.hideUnderThresholdCheckbox:SetChecked(MoxieTrackerDB.hideConcentrationUnderThreshold or false)
     panel.unalloyedEditBox:SetText(tostring(ns.GetThreshold("unalloyedAbundance")))
     panel.moxieEditBox:SetText(tostring(ns.GetThreshold("moxie")))
     panel.fusedVitalityEditBox:SetText(tostring(ns.GetThreshold("fusedVitality")))
@@ -516,6 +518,22 @@ local function CreateThresholdsPanel()
     panel.concentrationThresholdEditBoxes = {}
 
     local content = panel.content
+
+    -- Purely a display filter, not a threshold value itself, so it is kept
+    -- out of the "Reset thresholds" button below -- resetting the numeric
+    -- thresholds is not expected to also silently flip this back on.
+    local hideUnderThresholdCheckbox = CreateFrame("CheckButton", "MoxieTrackerHideConcentrationUnderThresholdOption",
+        content, "UICheckButtonTemplate")
+    hideUnderThresholdCheckbox:SetSize(24, 24)
+    hideUnderThresholdCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", 0, OPTIONS_THRESHOLD_HIDE_ROW_Y)
+    hideUnderThresholdCheckbox.label = hideUnderThresholdCheckbox:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    hideUnderThresholdCheckbox.label:SetPoint("LEFT", hideUnderThresholdCheckbox, "RIGHT", 4, 0)
+    hideUnderThresholdCheckbox.label:SetText("Hide Concentration values under threshold")
+    hideUnderThresholdCheckbox:SetScript("OnClick", function(self)
+        MoxieTrackerDB.hideConcentrationUnderThreshold = self:GetChecked() and true or nil
+        ns.UpdateConcentrationDisplay()
+    end)
+    panel.hideUnderThresholdCheckbox = hideUnderThresholdCheckbox
 
     -- Thresholds are always non-negative, so SetNumeric(true) is enough
     -- validation on its own; a cleared box (empty string) still needs the

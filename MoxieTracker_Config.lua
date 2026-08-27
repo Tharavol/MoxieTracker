@@ -258,6 +258,15 @@ function ns.GetConcentrationColor(profession, quantity, maxQuantity)
     return ns.YELLOW
 end
 
+-- Display filter for the "Hide Concentration values under threshold" option
+-- (#48): kept separate from ns.GetConcentrationColor since a hidden line
+-- still needs no color decision made at all, and separate from the
+-- MoxieTrackerDB flag check so callers don't have to duplicate the
+-- "concentration:" .. profession key format.
+function ns.IsConcentrationBelowThreshold(profession, quantity)
+    return quantity < ns.GetThreshold("concentration:" .. profession)
+end
+
 -- Stable identity for a row, used as the key for the show/hide setting. IDs are
 -- preferred because names are localized; the name form only ever applies to an
 -- entry that reached us through the keyword fallback with no resolvable ID.

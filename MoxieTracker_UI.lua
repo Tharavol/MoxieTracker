@@ -391,10 +391,16 @@ function ns.UpdateConcentrationDisplay()
         widest = math.max(widest, line.text:GetStringWidth())
     end
 
+    local hideUnderThreshold = MoxieTrackerDB.hideConcentrationUnderThreshold
+
     for _, entry in ipairs(roster) do
-        if #entry.professions > 0 then
-            RenderLine(string.format("%s%s|r", ns.WHITE, entry.name))
-            for _, profession in ipairs(entry.professions) do
+        local headerShown = false
+        for _, profession in ipairs(entry.professions) do
+            if not hideUnderThreshold or not ns.IsConcentrationBelowThreshold(profession.name, profession.current) then
+                if not headerShown then
+                    RenderLine(string.format("%s%s|r", ns.WHITE, entry.name))
+                    headerShown = true
+                end
                 local color = ns.GetConcentrationColor(profession.name, profession.current, profession.maxQuantity)
                 RenderLine(string.format("%s%s%s|r: %s%d|r (%s)",
                     INDENT, ns.WHITE, profession.name,

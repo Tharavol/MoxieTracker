@@ -277,6 +277,7 @@ do
     MoxieTrackerDB.hideKnowledgeWindow = true
     MoxieTrackerDB.hideConcentrationWindow = true
     MoxieTrackerDB.thresholds = { moxie = 700 }
+    MoxieTrackerDB.hideConcentrationUnderThreshold = true
     MoxieTrackerDB.debugLogging = true
     ns.frame.pinned = true
     dispatch("reset settings")
@@ -291,6 +292,8 @@ do
     assertEqual("reset settings clears the Knowledge Points window toggle", MoxieTrackerDB.hideKnowledgeWindow, nil)
     assertEqual("reset settings clears the Concentration window toggle", MoxieTrackerDB.hideConcentrationWindow, nil)
     assertEqual("reset settings clears threshold overrides", MoxieTrackerDB.thresholds, nil)
+    assertEqual("reset settings clears the Concentration under-threshold display toggle",
+        MoxieTrackerDB.hideConcentrationUnderThreshold, nil)
     assertEqual("reset settings clears debug logging", MoxieTrackerDB.debugLogging, nil)
     assertEqual("reset settings unpins the panel, but does not move it (S9 split)", ns.frame.pinned, false)
 
@@ -1310,6 +1313,23 @@ do
 
     assertEqual("WarmLearnedProfessionsCache alone is enough to survive a dropout",
         ns.IsProfessionLearned(Enum.Profession.Engineering), true)
+end
+
+--------------------------------------------------------------------------
+-- 15. "Hide Concentration values under threshold" display filter (#48).
+--------------------------------------------------------------------------
+do
+    fixtures.reset()
+    assertEqual("below the profession's default threshold (300) is below",
+        ns.IsConcentrationBelowThreshold("Alchemy", 299), true)
+    assertEqual("at the profession's default threshold is not below",
+        ns.IsConcentrationBelowThreshold("Alchemy", 300), false)
+
+    MoxieTrackerDB.thresholds = { ["concentration:Alchemy"] = 500 }
+    assertEqual("a per-profession override applies", ns.IsConcentrationBelowThreshold("Alchemy", 499), true)
+    assertEqual("a different profession is unaffected by another's override",
+        ns.IsConcentrationBelowThreshold("Tailoring", 400), false)
+    MoxieTrackerDB.thresholds = nil
 end
 
 print(string.format("%d checks, %d failure(s)", count, failures))
