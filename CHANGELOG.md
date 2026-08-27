@@ -8,10 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.9.6] - 2026-08-27
 
 ### Added
-- A "Hide Concentration values under threshold" checkbox on the Thresholds options page, under its own "Concentration" header alongside the per-profession thresholds it governs, beneath Unalloyed Abundance/Moxie/Fused Vitality (#48). When checked, the Concentration window skips a profession's line entirely once its value is below that profession's threshold, instead of always showing the line colored against it; a character with every profession filtered out this way is left off the list too.
+- A "Hide Concentration values under threshold" checkbox on the Thresholds options page (#48), under its own "Concentration" header alongside the per-profession thresholds it governs, beneath Unalloyed Abundance/Moxie/Fused Vitality (#49). When checked, the Concentration window skips a profession's line entirely once its value is below that profession's threshold, instead of always showing the line colored against it; a character with every profession filtered out this way is left off the list too.
 
 ### Fixed
-- Committing a threshold, muting a Concentration character/profession, or toggling "Show Concentration window"/"Hide Concentration values under threshold" from the options panel could pop the Concentration window up even with no profession open and the panel not pinned (#48 follow-up). Every other options-panel control that redraws a window already checked `ns.frame:IsShown()` first, matching whether the crafting window is actually open; the six Concentration-specific call sites (one new to #48, the rest predating it since #40/#41) had never had that guard, so they showed the window unconditionally whenever there was roster data to render.
+- Committing a threshold, muting a Concentration character/profession, or toggling "Show Concentration window"/"Hide Concentration values under threshold" from the options panel could pop the Concentration window up even with no profession open and the panel not pinned (#50). Every other options-panel control that redraws a window already checked `ns.frame:IsShown()` first, matching whether the crafting window is actually open; the six Concentration-specific call sites (one new to #48, the rest predating it since #40/#41) had never had that guard, so they showed the window unconditionally whenever there was roster data to render.
 
 ## [1.9.5] - 2026-08-27
 
