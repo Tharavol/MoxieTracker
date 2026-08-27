@@ -371,6 +371,13 @@ local WINDOW_OFFSET_DEFAULTS = {
     main = { x = 4, y = -440 },
 }
 
+-- Third return value: which of the crafting frame's corners the offset is
+-- relative to (#47) -- "right" (the only mode that ever existed before
+-- this) anchors the window's TOPLEFT to the crafting frame's TOPRIGHT;
+-- "left" anchors the window's TOPRIGHT to the crafting frame's TOPLEFT, for
+-- a window the user dragged to rest on the frame's *left* side. Always
+-- "right" for a legacy/default offset with no stored side, so nothing
+-- changes for any offset saved before this existed.
 function ns.GetOffset(windowKey)
     -- Called from the UI file's file-scope ApplyAnchor(), which runs before
     -- ADDON_LOADED has had a chance to initialize MoxieTrackerDB. SavedVariables
@@ -381,24 +388,64 @@ function ns.GetOffset(windowKey)
     local x = stored and stored.offsetX
     local y = stored and stored.offsetY
     if type(x) == "number" and type(y) == "number" then
-        return x, y
+        return x, y, (stored.side == "left") and "left" or "right"
     end
     local default = WINDOW_OFFSET_DEFAULTS[windowKey]
     if default then
-        return default.x, default.y
+        return default.x, default.y, "right"
     end
-    return nil, nil
+    return nil, nil, nil
 end
 
-function ns.SetOffset(windowKey, x, y)
+-- `side` is optional and only ever passed by ns.UI's drag-stop handler,
+-- which is the one place that can actually tell which side of the crafting
+-- frame the window landed on. Every other caller (the options panel's
+-- manual X/Y edit boxes) calls this with just x/y, and must not silently
+-- flip a left-docked window back to "right" just because the user typed a
+-- new number into one box -- so an omitted `side` preserves whatever was
+-- already stored, rather than defaulting to "right" outright.
+function ns.SetOffset(windowKey, x, y, side)
+    if not side then
+        local existing = MoxieTrackerDB.windows and MoxieTrackerDB.windows[windowKey]
+        side = existing and existing.side
+    end
     MoxieTrackerDB.windows = MoxieTrackerDB.windows or {}
-    MoxieTrackerDB.windows[windowKey] = { offsetX = x, offsetY = y }
+    MoxieTrackerDB.windows[windowKey] = { offsetX = x, offsetY = y, side = side }
 end
 
 function ns.ClearOffset(windowKey)
     if MoxieTrackerDB.windows then
         MoxieTrackerDB.windows[windowKey] = nil
     end
+end
+
+-- Pure geometry, no frame objects, so it is testable without a live client
+-- (#47): decides which of the crafting frame's edges a just-dropped window
+-- should track from now on. ProfessionsFrame resizes across its own tabs --
+-- confirmed live in-game, the Specializations tab is visibly wider than
+-- Recipes/Crafting Orders, extending mostly leftward -- so a window
+-- anchored to the frame's TOPRIGHT (the only anchor MoxieTracker had before
+-- this) drifts along with however far right TOPRIGHT happens to sit, while
+-- a window sitting to the frame's *left* actually needs to track its
+-- TOPLEFT edge to hold a constant gap regardless of how wide the frame
+-- gets. Unambiguous cases (window entirely clear of the frame on one side)
+-- decide directly; an overlapping drop (on top of the frame, or only
+-- nudged vertically) falls back to comparing centers, defaulting to
+-- "right" on an exact tie -- what every offset meant before "left" existed,
+-- so nudging a window near its already-anchored spot never flips it.
+function ns.ComputeAnchorSide(windowLeft, windowRight, frameLeft, frameRight)
+    if windowRight <= frameLeft then
+        return "left"
+    end
+    if windowLeft >= frameRight then
+        return "right"
+    end
+    local windowCenter = (windowLeft + windowRight) / 2
+    local frameCenter = (frameLeft + frameRight) / 2
+    if windowCenter < frameCenter then
+        return "left"
+    end
+    return "right"
 end
 
 -- One-time upgrade path for the pre-#40 single offsetX/offsetY pair (main

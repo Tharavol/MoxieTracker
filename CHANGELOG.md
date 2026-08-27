@@ -5,6 +5,11 @@ All notable changes to MoxieTracker are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.5] - 2026-08-27
+
+### Fixed
+- A tracker window dragged to rest on the crafting window's *left* side (most commonly Concentration) could drift under the crafting window and get its text clipped after switching to the Specializations tab (#47). `ProfessionsFrame` itself resizes across its own tabs -- Specializations is visibly wider than Recipes/Crafting Orders, extending mostly leftward -- and every window's saved position was a fixed offset from the frame's TOPRIGHT corner regardless of which side it actually rested on, so a left-docked window's offset stopped clearing the frame's new, wider left edge. A window now remembers which side it was dropped on and tracks that side's corner instead, so a left-docked window holds a constant gap no matter how wide the crafting frame gets on its right/interior side -- matching how a right-docked window (the default for all three) already behaved correctly.
+
 ## [1.9.4] - 2026-08-27
 
 ### Added
@@ -330,6 +335,7 @@ during load; that tag was removed and reused for this release.
 - The full GPL-3.0 text, replacing a truncated stub that named the license but
   omitted its terms.
 
+[1.9.5]: https://github.com/Tharavol/MoxieTracker/compare/v1.9.4...v1.9.5
 [1.9.4]: https://github.com/Tharavol/MoxieTracker/compare/v1.9.3...v1.9.4
 [1.9.3]: https://github.com/Tharavol/MoxieTracker/compare/v1.9.2...v1.9.3
 [1.9.2]: https://github.com/Tharavol/MoxieTracker/compare/v1.9.1...v1.9.2

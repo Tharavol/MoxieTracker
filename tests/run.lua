@@ -900,6 +900,56 @@ do
 end
 
 --------------------------------------------------------------------------
+-- 10b. Anchor side (#47). A window dragged to rest on the crafting frame's
+-- left side needs to track the frame's TOPLEFT, not its TOPRIGHT -- see
+-- ns.ComputeAnchorSide's own comment in the Config file for why (the
+-- crafting frame resizes across its own tabs, confirmed live in-game).
+--------------------------------------------------------------------------
+do
+    check("clearly right of the frame reads as right",
+        ns.ComputeAnchorSide(500, 600, 0, 300) == "right")
+    check("clearly left of the frame reads as left",
+        ns.ComputeAnchorSide(0, 100, 300, 600) == "left")
+    check("touching the frame's left edge exactly still reads as left (window's right == frame's left)",
+        ns.ComputeAnchorSide(0, 300, 300, 600) == "left")
+    check("overlapping, window center left of the frame's center reads as left",
+        ns.ComputeAnchorSide(0, 250, 200, 600) == "left")
+    check("overlapping, window center right of the frame's center reads as right",
+        ns.ComputeAnchorSide(350, 700, 200, 600) == "right")
+    check("an exact center tie defaults to right, same as every offset meant before \"left\" existed",
+        ns.ComputeAnchorSide(200, 400, 100, 500) == "right")
+end
+
+--------------------------------------------------------------------------
+-- 10c. ns.GetOffset/ns.SetOffset carry a side (#47). A stored side survives
+-- a 2-arg SetOffset call (the options panel's manual X/Y edit boxes never
+-- pass one) instead of silently reverting a left-docked window to "right";
+-- an offset that has never had a side set at all still reads as "right",
+-- so nothing changes for every offset saved before "left" existed.
+--------------------------------------------------------------------------
+do
+    fixtures.reset()
+
+    ns.SetOffset("concentration", -900, -50, "left")
+    local x, y, side = ns.GetOffset("concentration")
+    assertEqual("a stored left offset's x is returned", x, -900)
+    assertEqual("a stored left offset's y is returned", y, -50)
+    assertEqual("a stored left offset's side is returned", side, "left")
+
+    -- The options panel's Position row commits x/y only.
+    ns.SetOffset("concentration", -950, -60)
+    local _, _, sideAfter2ArgCommit = ns.GetOffset("concentration")
+    assertEqual("a 2-arg SetOffset preserves the previously stored side", sideAfter2ArgCommit, "left")
+
+    ns.SetOffset("knowledge", 10, -20)
+    local _, _, defaultSide = ns.GetOffset("knowledge")
+    assertEqual("an offset that never had a side set reads as right", defaultSide, "right")
+
+    local _, _, mainSide = ns.GetOffset("main")
+    assertEqual("main's numeric default also reads as right", mainSide, "right")
+end
+
+--------------------------------------------------------------------------
 -- 11. Duration formatting (#40).
 --------------------------------------------------------------------------
 do

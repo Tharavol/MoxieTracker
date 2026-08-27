@@ -71,11 +71,22 @@ local WINDOW_ANCHOR_FALLBACK = {
 }
 
 local function ApplyWindowAnchor(window, windowKey)
-    local offsetX, offsetY = ns.GetOffset(windowKey)
+    local offsetX, offsetY, side = ns.GetOffset(windowKey)
     window:ClearAllPoints()
     if offsetX and offsetY then
         if ns.craftingFrame then
-            window:SetPoint("TOPLEFT", ns.craftingFrame, "TOPRIGHT", offsetX, offsetY)
+            -- "left" (#47) tracks the crafting frame's TOPLEFT instead of
+            -- its TOPRIGHT, so a window resting to the frame's left holds a
+            -- constant gap regardless of how wide the frame gets on its
+            -- right/interior side -- ProfessionsFrame visibly resizes
+            -- across its own tabs (Specializations is wider than
+            -- Recipes/Crafting Orders), which a TOPRIGHT-only anchor has no
+            -- way to account for on that side.
+            if side == "left" then
+                window:SetPoint("TOPRIGHT", ns.craftingFrame, "TOPLEFT", offsetX, offsetY)
+            else
+                window:SetPoint("TOPLEFT", ns.craftingFrame, "TOPRIGHT", offsetX, offsetY)
+            end
         else
             window:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 20, 20)
         end
@@ -104,7 +115,12 @@ end
 
 -- After a free drag `window` is anchored to wherever it was dropped, so
 -- convert that screen position back into an offset from the crafting window
--- and store it under `windowKey`.
+-- and store it under `windowKey`. Which of the window's/frame's edges feed
+-- that conversion depends on ns.ComputeAnchorSide's verdict (#47): a
+-- "left"-docked window's offset is measured from its own right edge to the
+-- crafting frame's left edge (matching the TOPRIGHT->TOPLEFT anchor
+-- ApplyWindowAnchor uses for that side), not its left edge to the frame's
+-- right the way every offset was measured before "left" existed.
 local function SaveOffsetFromAnchor(window, windowKey)
     if not ns.craftingFrame then
         return
@@ -112,15 +128,21 @@ local function SaveOffsetFromAnchor(window, windowKey)
 
     local windowScale = window:GetEffectiveScale()
     local anchorScale = ns.craftingFrame:GetEffectiveScale()
-    local left, top = window:GetLeft(), window:GetTop()
-    local anchorRight, anchorTop = ns.craftingFrame:GetRight(), ns.craftingFrame:GetTop()
-    if not left or not top or not anchorRight or not anchorTop then
+    local windowLeft, windowRight, top = window:GetLeft(), window:GetRight(), window:GetTop()
+    local frameLeft, frameRight, anchorTop =
+        ns.craftingFrame:GetLeft(), ns.craftingFrame:GetRight(), ns.craftingFrame:GetTop()
+    if not windowLeft or not windowRight or not top or not frameLeft or not frameRight or not anchorTop then
         return
     end
 
+    local side = ns.ComputeAnchorSide(windowLeft, windowRight, frameLeft, frameRight)
+    local windowEdge = (side == "left") and windowRight or windowLeft
+    local anchorEdge = (side == "left") and frameLeft or frameRight
+
     ns.SetOffset(windowKey,
-        RoundToPixel(((left * windowScale) - (anchorRight * anchorScale)) / windowScale),
-        RoundToPixel(((top * windowScale) - (anchorTop * anchorScale)) / windowScale))
+        RoundToPixel(((windowEdge * windowScale) - (anchorEdge * anchorScale)) / windowScale),
+        RoundToPixel(((top * windowScale) - (anchorTop * anchorScale)) / windowScale),
+        side)
 end
 
 local function MakeWindowDraggable(window, windowKey)
