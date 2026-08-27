@@ -499,6 +499,23 @@ end
 -- each discovered their own profession's ID while the crafting window
 -- was open, ever got real data).
 --
+-- MoxieTrackerDB.learnedProfessions (#46) is the same shape one tier further
+-- out: a character whose session-local cache below was never warmed at all
+-- before its own logout -- the session-local cache's own blind spot, since
+-- it only helps once something has already populated it earlier in that
+-- same session -- would otherwise write a permanently empty Knowledge
+-- `professions` breakdown, silently dropping that character from the
+-- Character Professions options page forever (#46: "only a few professions
+-- shown despite multiple character logins from many more characters").
+-- Written every time ComputeLearnedProfessions() succeeds, the same moment
+-- the session-local cache is, so any character that has EVER had its
+-- professions read successfully keeps that answer permanently rather than
+-- needing to get lucky again on every later logout.
+local function PersistLearnedProfessions(key, learned)
+    MoxieTrackerDB.learnedProfessions = MoxieTrackerDB.learnedProfessions or {}
+    MoxieTrackerDB.learnedProfessions[key] = learned
+end
+
 -- ns._learnedProfessionsCache remembers the last successfully-computed
 -- learned set per character (keyed by ns.GetCharacterKey(), session-local
 -- only -- never written to SavedVariables) so a logout-time API dropout
@@ -553,7 +570,9 @@ function ns.WarmLearnedProfessionsCache()
     end
     local learned = ComputeLearnedProfessions()
     if learned then
-        ns._learnedProfessionsCache[ns.GetCharacterKey()] = learned
+        local key = ns.GetCharacterKey()
+        ns._learnedProfessionsCache[key] = learned
+        PersistLearnedProfessions(key, learned)
     end
 end
 
@@ -566,8 +585,10 @@ function ns.IsProfessionLearned(profession)
     local learned = ComputeLearnedProfessions()
     if learned then
         ns._learnedProfessionsCache[key] = learned
+        PersistLearnedProfessions(key, learned)
     else
         learned = ns._learnedProfessionsCache[key]
+            or (MoxieTrackerDB.learnedProfessions and MoxieTrackerDB.learnedProfessions[key])
     end
     return learned ~= nil and learned[profession] == true
 end

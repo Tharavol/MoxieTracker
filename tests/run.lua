@@ -365,6 +365,37 @@ do
         MoxieTrackerDB.knowledge[key].professions[1].name, "Alchemy")
 end
 
+--------------------------------------------------------------------------
+-- 6a. Durable learned-professions fallback (#46). GetProfessions() is
+-- confirmed to go dark at logout in the real client; ns._learnedProfessionsCache
+-- covers that within a session, but a character whose session-local cache
+-- was never warmed before its own logout used to write a permanently empty
+-- Knowledge `professions` breakdown, silently dropping that character from
+-- the Character Professions options page forever.
+-- MoxieTrackerDB.learnedProfessions is the cross-session fallback tier that
+-- fixes that -- once a live read has ever succeeded, the answer survives a
+-- session where neither the live read nor the session-local cache do.
+--------------------------------------------------------------------------
+do
+    fixtures.reset()
+    fixtures.setCharacter("Borin", "Stormrage")
+    fixtures.setOpenProfession(100, Enum.Profession.Alchemy, 0)
+    fixtures.setLearnedProfessions(100)
+
+    check("Alchemy reads as learned on a live read", ns.IsProfessionLearned(Enum.Profession.Alchemy))
+    local key = ns.GetCharacterKey()
+    check("the live read is persisted to SavedVariables",
+        MoxieTrackerDB.learnedProfessions and MoxieTrackerDB.learnedProfessions[key]
+            and MoxieTrackerDB.learnedProfessions[key][Enum.Profession.Alchemy] == true)
+
+    -- Simulate the API going dark (e.g. at logout) with no session-local
+    -- cache either -- only the persisted fallback is left to answer from.
+    fixtures.setLearnedProfessions()
+    ns._learnedProfessionsCache = {}
+    check("still reads as learned via the persisted fallback when both the live read and the session cache miss",
+        ns.IsProfessionLearned(Enum.Profession.Alchemy))
+end
+
 do
     fixtures.reset()
 
