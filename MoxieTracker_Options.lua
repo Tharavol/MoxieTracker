@@ -389,7 +389,9 @@ local function CreateGeneralPanel()
     concentrationWindowCheckbox.label:SetText("Show Concentration window")
     concentrationWindowCheckbox:SetScript("OnClick", function(self)
         MoxieTrackerDB.hideConcentrationWindow = not self:GetChecked()
-        ns.UpdateConcentrationDisplay()
+        if ns.frame:IsShown() then
+            ns.UpdateConcentrationDisplay()
+        end
         ns.RefreshConcentrationTicker()
     end)
     panel.concentrationWindowCheckbox = concentrationWindowCheckbox
@@ -491,12 +493,18 @@ end
 -- MoxieTrackerDB.thresholds table).
 --------------------------------------------------------------------------
 
-local OPTIONS_THRESHOLD_HEADER_Y = 0
-local OPTIONS_THRESHOLD_HIDE_ROW_Y = OPTIONS_THRESHOLD_HEADER_Y - OPTIONS_HEADER_HEIGHT
-local OPTIONS_THRESHOLD_UA_ROW_Y = OPTIONS_THRESHOLD_HIDE_ROW_Y - OPTIONS_ROW_HEIGHT
+local OPTIONS_THRESHOLD_UA_ROW_Y = 0
 local OPTIONS_THRESHOLD_MOXIE_ROW_Y = OPTIONS_THRESHOLD_UA_ROW_Y - OPTIONS_ROW_HEIGHT
 local OPTIONS_THRESHOLD_FV_ROW_Y = OPTIONS_THRESHOLD_MOXIE_ROW_Y - OPTIONS_ROW_HEIGHT
-local OPTIONS_THRESHOLD_CONCENTRATION_FIRST_Y = OPTIONS_THRESHOLD_FV_ROW_Y - OPTIONS_ROW_HEIGHT
+
+-- Concentration's checkbox and eight per-profession thresholds get their own
+-- header (#48 follow-up), separating them from Unalloyed Abundance/Moxie/
+-- Fused Vitality above -- those three are unrelated currencies sharing a
+-- flat list, while everything under this header is specifically about
+-- Concentration.
+local OPTIONS_THRESHOLD_CONCENTRATION_HEADER_Y = OPTIONS_THRESHOLD_FV_ROW_Y - OPTIONS_ROW_HEIGHT
+local OPTIONS_THRESHOLD_HIDE_ROW_Y = OPTIONS_THRESHOLD_CONCENTRATION_HEADER_Y - OPTIONS_HEADER_HEIGHT
+local OPTIONS_THRESHOLD_CONCENTRATION_FIRST_Y = OPTIONS_THRESHOLD_HIDE_ROW_Y - OPTIONS_ROW_HEIGHT
 local OPTIONS_THRESHOLD_RESET_Y = OPTIONS_THRESHOLD_CONCENTRATION_FIRST_Y
     - (#ns.CONCENTRATION_PROFESSIONS * OPTIONS_ROW_HEIGHT)
 
@@ -519,22 +527,6 @@ local function CreateThresholdsPanel()
 
     local content = panel.content
 
-    -- Purely a display filter, not a threshold value itself, so it is kept
-    -- out of the "Reset thresholds" button below -- resetting the numeric
-    -- thresholds is not expected to also silently flip this back on.
-    local hideUnderThresholdCheckbox = CreateFrame("CheckButton", "MoxieTrackerHideConcentrationUnderThresholdOption",
-        content, "UICheckButtonTemplate")
-    hideUnderThresholdCheckbox:SetSize(24, 24)
-    hideUnderThresholdCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", 0, OPTIONS_THRESHOLD_HIDE_ROW_Y)
-    hideUnderThresholdCheckbox.label = hideUnderThresholdCheckbox:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    hideUnderThresholdCheckbox.label:SetPoint("LEFT", hideUnderThresholdCheckbox, "RIGHT", 4, 0)
-    hideUnderThresholdCheckbox.label:SetText("Hide Concentration values under threshold")
-    hideUnderThresholdCheckbox:SetScript("OnClick", function(self)
-        MoxieTrackerDB.hideConcentrationUnderThreshold = self:GetChecked() and true or nil
-        ns.UpdateConcentrationDisplay()
-    end)
-    panel.hideUnderThresholdCheckbox = hideUnderThresholdCheckbox
-
     -- Thresholds are always non-negative, so SetNumeric(true) is enough
     -- validation on its own; a cleared box (empty string) still needs the
     -- same tonumber() nil-check as the position fields.
@@ -548,6 +540,28 @@ local function CreateThresholdsPanel()
     panel.moxieEditBox = moxieEditBox
     panel.fusedVitalityEditBox = fusedVitalityEditBox
 
+    local concentrationHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    concentrationHeader:SetPoint("TOPLEFT", content, "TOPLEFT", 0, OPTIONS_THRESHOLD_CONCENTRATION_HEADER_Y)
+    concentrationHeader:SetText("Concentration")
+
+    -- Purely a display filter, not a threshold value itself, so it is kept
+    -- out of the "Reset thresholds" button below -- resetting the numeric
+    -- thresholds is not expected to also silently flip this back on.
+    local hideUnderThresholdCheckbox = CreateFrame("CheckButton", "MoxieTrackerHideConcentrationUnderThresholdOption",
+        content, "UICheckButtonTemplate")
+    hideUnderThresholdCheckbox:SetSize(24, 24)
+    hideUnderThresholdCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", 0, OPTIONS_THRESHOLD_HIDE_ROW_Y)
+    hideUnderThresholdCheckbox.label = hideUnderThresholdCheckbox:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    hideUnderThresholdCheckbox.label:SetPoint("LEFT", hideUnderThresholdCheckbox, "RIGHT", 4, 0)
+    hideUnderThresholdCheckbox.label:SetText("Hide Concentration values under threshold")
+    hideUnderThresholdCheckbox:SetScript("OnClick", function(self)
+        MoxieTrackerDB.hideConcentrationUnderThreshold = self:GetChecked() and true or nil
+        if ns.frame:IsShown() then
+            ns.UpdateConcentrationDisplay()
+        end
+    end)
+    panel.hideUnderThresholdCheckbox = hideUnderThresholdCheckbox
+
     -- Each threshold commits independently, unlike the Position fields: they
     -- are unrelated settings, so one bad entry should not revert the others.
     local function CommitThreshold(box, key)
@@ -560,9 +574,9 @@ local function CreateThresholdsPanel()
         MoxieTrackerDB.thresholds[key] = value
         if ns.frame:IsShown() then
             ns.UpdateDisplay()
-        end
-        if key:find("^concentration:") then
-            ns.UpdateConcentrationDisplay()
+            if key:find("^concentration:") then
+                ns.UpdateConcentrationDisplay()
+            end
         end
     end
 
@@ -605,8 +619,8 @@ local function CreateThresholdsPanel()
         end
         if ns.frame:IsShown() then
             ns.UpdateDisplay()
+            ns.UpdateConcentrationDisplay()
         end
-        ns.UpdateConcentrationDisplay()
     end)
 
     -- Every row on this page has a fixed, build-time-known position (unlike
@@ -744,7 +758,9 @@ local function EnsureConcentrationCharacterRow(panel, index)
     return EnsureListRow(panel, panel.concentrationCharRows, index, "MoxieTrackerConcentrationCharacterOption",
         function(self)
             ns.SetConcentrationCharacterMuted(self.entryKey, not self:GetChecked())
-            ns.UpdateConcentrationDisplay()
+            if ns.frame:IsShown() then
+                ns.UpdateConcentrationDisplay()
+            end
         end)
 end
 
@@ -791,7 +807,9 @@ local function EnsureConcentrationProfessionRow(panel, index)
     return EnsureListRow(panel, panel.concentrationProfessionRows, index,
         "MoxieTrackerConcentrationProfessionOption", function(self)
             ns.SetConcentrationProfessionMuted(self.characterKey, self.professionName, not self:GetChecked())
-            ns.UpdateConcentrationDisplay()
+            if ns.frame:IsShown() then
+                ns.UpdateConcentrationDisplay()
+            end
         end)
 end
 
