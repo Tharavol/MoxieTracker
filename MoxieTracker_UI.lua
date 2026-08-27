@@ -531,6 +531,16 @@ frame:SetScript("OnEvent", function(self, event, arg1)
             ns.Print("%s loaded. Type /moxie for options.", ns.GetVersion())
         end
     elseif event == "PLAYER_ENTERING_WORLD" then
+        -- Unconditional, unlike the tracker-window refresh below: warms
+        -- ns.IsProfessionLearned's per-character cache while the profession
+        -- API is confirmed live, regardless of whether any tracker window
+        -- is currently shown (RefreshAllWindows, and every other caller of
+        -- ns.IsProfessionLearned, only runs while one is). Confirmed
+        -- empirically that the same API goes dark by PLAYER_LOGOUT -- see
+        -- the comment above ns.IsProfessionLearned in the Collect file --
+        -- so this is this session's only guaranteed chance to populate the
+        -- cache before SnapshotConcentration needs it at logout.
+        ns.WarmLearnedProfessionsCache()
         if self:IsShown() then
             RefreshAllWindows()
         end

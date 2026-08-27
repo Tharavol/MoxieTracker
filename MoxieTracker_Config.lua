@@ -60,21 +60,39 @@ ns.ALWAYS_SHOWN_IDS = {
     3377, -- Unalloyed Abundance
 }
 
--- Shown only when held. Every character can theoretically hold all eleven, so
--- listing them unconditionally would fill the panel with empty rows.
-ns.MOXIE_IDS = {
-    3256, -- Artisan Alchemist's Moxie
-    3257, -- Artisan Blacksmith's Moxie
-    3258, -- Artisan Enchanter's Moxie
-    3259, -- Artisan Engineer's Moxie
-    3260, -- Artisan Herbalist's Moxie
-    3261, -- Artisan Scribe's Moxie
-    3262, -- Artisan Jewelcrafter's Moxie
-    3263, -- Artisan Leatherworker's Moxie
-    3264, -- Artisan Miner's Moxie
-    3265, -- Artisan Skinner's Moxie
-    3266, -- Artisan Tailor's Moxie
+-- Shown only when held, and only for a profession this character actually
+-- has (ns.CollectTracked's Pass 2 gates on `enum` via ns.IsProfessionLearned
+-- -- the same reasoning as ns.CONCENTRATION_PROFESSIONS/Concentration's own
+-- account-wide-currency-ID leak below: C_CurrencyInfo.GetCurrencyInfo
+-- happily returns a valid nonzero quantity for a Moxie currency ID any
+-- character on the account has ever earned, not just ones the CURRENT
+-- character has trained. Reported live in-game: a character with only one
+-- profession showed both that profession's Moxie and a second profession's
+-- Moxie it never had). `enum` is Enum.Profession, kept alongside `id` the
+-- same way ns.CONCENTRATION_PROFESSIONS does, so ns.IsProfessionLearned can
+-- check it directly.
+ns.MOXIE_PROFESSIONS = {
+    { id = 3256, enum = Enum.Profession.Alchemy, name = "Alchemy" }, -- Artisan Alchemist's Moxie
+    { id = 3257, enum = Enum.Profession.Blacksmithing, name = "Blacksmithing" }, -- Artisan Blacksmith's Moxie
+    { id = 3258, enum = Enum.Profession.Enchanting, name = "Enchanting" }, -- Artisan Enchanter's Moxie
+    { id = 3259, enum = Enum.Profession.Engineering, name = "Engineering" }, -- Artisan Engineer's Moxie
+    { id = 3260, enum = Enum.Profession.Herbalism, name = "Herbalism" }, -- Artisan Herbalist's Moxie
+    { id = 3261, enum = Enum.Profession.Inscription, name = "Inscription" }, -- Artisan Scribe's Moxie
+    { id = 3262, enum = Enum.Profession.Jewelcrafting, name = "Jewelcrafting" }, -- Artisan Jewelcrafter's Moxie
+    { id = 3263, enum = Enum.Profession.Leatherworking, name = "Leatherworking" }, -- Artisan Leatherworker's Moxie
+    { id = 3264, enum = Enum.Profession.Mining, name = "Mining" }, -- Artisan Miner's Moxie
+    { id = 3265, enum = Enum.Profession.Skinning, name = "Skinning" }, -- Artisan Skinner's Moxie
+    { id = 3266, enum = Enum.Profession.Tailoring, name = "Tailoring" }, -- Artisan Tailor's Moxie
 }
+
+-- Flat ID list derived from the above, for the two call sites that only
+-- ever needed bare IDs (the keyword-fallback MOXIE_ID_SET in the Collect
+-- file, and /moxie debug dump's "tracked IDs" printer) and have no reason
+-- to know profession identity.
+ns.MOXIE_IDS = {}
+for _, profession in ipairs(ns.MOXIE_PROFESSIONS) do
+    table.insert(ns.MOXIE_IDS, profession.id)
+end
 
 -- One currency per profession, all eleven accounted for: each profession's
 -- unspent Midnight Knowledge, confirmed in-game (#38). Named per profession,

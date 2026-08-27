@@ -5,6 +5,12 @@ All notable changes to MoxieTracker are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.2] - 2026-08-26
+
+### Fixed
+- A character's Moxie row list could show a profession they never trained, e.g. both Alchemist's and Engineer's Moxie for a character who only has one of the two. `C_CurrencyInfo.GetCurrencyInfo` returns a valid nonzero quantity for any profession's Moxie currency once any character on the account has earned it, not just the currently logged-in one -- the same account-wide-currency leak #40 already fixed for Concentration, now also applied to Moxie's row collection.
+- Concentration almost never accumulated across characters (#40 follow-up). `GetProfessions()` -- the API `ns.IsProfessionLearned` uses to gate a character's Concentration snapshot -- goes dark by the time `PLAYER_LOGOUT` fires, reporting no profession at all even for a character confirmed live moments earlier in the same session, so a logout only ever recorded real data for a character who happened to freshly discover their own profession's currency ID while its crafting window was open. Every other character silently logged out with an empty Concentration entry. A per-character cache now remembers the last confirmed-live result and falls back to it when the API drops out at logout.
+
 ## [1.9.1] - 2026-08-26
 
 ### Changed
@@ -306,6 +312,7 @@ during load; that tag was removed and reused for this release.
 - The full GPL-3.0 text, replacing a truncated stub that named the license but
   omitted its terms.
 
+[1.9.2]: https://github.com/Tharavol/MoxieTracker/compare/v1.9.1...v1.9.2
 [1.9.1]: https://github.com/Tharavol/MoxieTracker/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/Tharavol/MoxieTracker/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/Tharavol/MoxieTracker/compare/v1.7.0...v1.8.0

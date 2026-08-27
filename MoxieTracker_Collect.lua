@@ -107,11 +107,16 @@ function ns.CollectTracked(includeHidden)
         end
     end
 
-    -- Pass 2: by ID, only for professions this character actually has.
-    for _, currencyID in ipairs(ns.MOXIE_IDS) do
-        local info = C_CurrencyInfo.GetCurrencyInfo(currencyID)
-        if info and info.name and (info.quantity or 0) > 0 then
-            Add(currencyID, nil, info.name, info.quantity)
+    -- Pass 2: by ID, only for professions this character actually has --
+    -- gated via ns.IsProfessionLearned (defined below), the same fix #40
+    -- applied to Concentration and for the same reason: GetCurrencyInfo
+    -- returns a valid nonzero quantity for a Moxie currency ID any
+    -- character on the account has ever earned, not just ones the CURRENT
+    -- character has trained.
+    for _, profession in ipairs(ns.MOXIE_PROFESSIONS) do
+        local info = C_CurrencyInfo.GetCurrencyInfo(profession.id)
+        if info and info.name and (info.quantity or 0) > 0 and ns.IsProfessionLearned(profession.enum) then
+            Add(profession.id, nil, info.name, info.quantity)
         end
     end
 
@@ -422,13 +427,80 @@ end
 -- once known, see ns.DiscoverConcentrationCurrencyID), even for a
 -- profession this character has never trained. Without this check, every
 -- profession any alt had ever opened would show up for every character.
-local function CheckProfessionSlot(slotIndex, profession)
+--
+-- GetProfessions() is confirmed empirically to go dark by the time
+-- PLAYER_LOGOUT fires -- returning nil for every one of the six slots, not
+-- just an unrelated one -- even though the identical call succeeds earlier
+-- in the same session (caught live via a debug trace written into
+-- SavedVariables from ns.SnapshotConcentration, since a chat print during
+-- logout is not reliably seen: a character with a currently-open Alchemy
+-- and Engineering, both confirmed moments earlier via a live /run query,
+-- still logged out with every profession reporting not-learned). Without a
+-- fallback, that made ns.SnapshotConcentration -- the one and only caller
+-- of this function that runs at logout -- silently write an empty
+-- professions table for any character whose currency ID was already known
+-- from a different character, rather than one they had to freshly
+-- discover themselves this session (see the module comment above
+-- ns.SnapshotConcentration for why only Tharavol/Galanodel/Ebonclad, who
+-- each discovered their own profession's ID while the crafting window
+-- was open, ever got real data).
+--
+-- ns._learnedProfessionsCache remembers the last successfully-computed
+-- learned set per character (keyed by ns.GetCharacterKey(), session-local
+-- only -- never written to SavedVariables) so a logout-time API dropout
+-- falls back to what was already confirmed live during normal play, rather
+-- than concluding the character has no professions at all. Kept on `ns`
+-- itself, not a plain module-local, purely so tests/run.lua can clear it
+-- between scenarios the same way it resets MoxieTrackerDB -- real gameplay
+-- never clears it mid-session, since a genuine session boundary always
+-- means a fresh ns.WarmLearnedProfessionsCache call at PLAYER_ENTERING_WORLD.
+ns._learnedProfessionsCache = {}
+
+local function AddSlotProfession(learned, slotIndex)
     if not slotIndex then
-        return false
+        return
     end
     local skillLineID = select(7, GetProfessionInfo(slotIndex))
     local info = skillLineID and C_TradeSkillUI.GetProfessionInfoBySkillLineID(skillLineID)
-    return info ~= nil and info.profession == profession
+    if info and info.profession then
+        learned[info.profession] = true
+    end
+end
+
+-- Six slots checked individually rather than via ipairs() over a table
+-- literal, which stops at the first nil and could skip a later, populated
+-- slot -- several of the six are commonly nil.
+local function ComputeLearnedProfessions()
+    local prof1, prof2, arch, fish, cook, firstAid = GetProfessions()
+    if not (prof1 or prof2 or arch or fish or cook or firstAid) then
+        return nil
+    end
+    local learned = {}
+    AddSlotProfession(learned, prof1)
+    AddSlotProfession(learned, prof2)
+    AddSlotProfession(learned, arch)
+    AddSlotProfession(learned, fish)
+    AddSlotProfession(learned, cook)
+    AddSlotProfession(learned, firstAid)
+    return learned
+end
+
+-- Populates ns._learnedProfessionsCache for the current character without
+-- needing an ns.IsProfessionLearned(profession) call for a specific
+-- profession first. Called from PLAYER_ENTERING_WORLD (see the UI file)
+-- unconditionally, regardless of whether the tracker window is currently
+-- shown, so the cache is warm well before PLAYER_LOGOUT can need it --
+-- RefreshAllWindows, which every other ns.IsProfessionLearned caller runs
+-- through, only fires while a tracker window is visible.
+function ns.WarmLearnedProfessionsCache()
+    if not GetProfessions or not GetProfessionInfo or not C_TradeSkillUI
+        or not C_TradeSkillUI.GetProfessionInfoBySkillLineID then
+        return
+    end
+    local learned = ComputeLearnedProfessions()
+    if learned then
+        ns._learnedProfessionsCache[ns.GetCharacterKey()] = learned
+    end
 end
 
 function ns.IsProfessionLearned(profession)
@@ -436,10 +508,14 @@ function ns.IsProfessionLearned(profession)
         or not C_TradeSkillUI.GetProfessionInfoBySkillLineID then
         return false
     end
-    local prof1, prof2, arch, fish, cook, firstAid = GetProfessions()
-    return CheckProfessionSlot(prof1, profession) or CheckProfessionSlot(prof2, profession)
-        or CheckProfessionSlot(arch, profession) or CheckProfessionSlot(fish, profession)
-        or CheckProfessionSlot(cook, profession) or CheckProfessionSlot(firstAid, profession)
+    local key = ns.GetCharacterKey()
+    local learned = ComputeLearnedProfessions()
+    if learned then
+        ns._learnedProfessionsCache[key] = learned
+    else
+        learned = ns._learnedProfessionsCache[key]
+    end
+    return learned ~= nil and learned[profession] == true
 end
 
 -- Persists the current character's Concentration into the account-wide

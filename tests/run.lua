@@ -25,6 +25,19 @@ end
 local ns = {}
 LoadAddonFiles("MoxieTracker.toc", "MoxieTracker", ns)
 
+-- ns._learnedProfessionsCache (see ns.IsProfessionLearned) is module state
+-- that survives across every `do...end` scenario below, unlike the stub's
+-- own fixtures -- fixtures.reset() cannot reach it, since stub.lua is
+-- loaded before ns exists. Wrapped here instead of touching every existing
+-- fixtures.reset() call site: several scenarios reuse the same character
+-- name (e.g. "Alaria-Stormrage"), and without this a later scenario could
+-- silently inherit an earlier one's cached learned-profession set.
+local originalFixturesReset = fixtures.reset
+fixtures.reset = function()
+    originalFixturesReset()
+    ns._learnedProfessionsCache = {}
+end
+
 local failures = 0
 local count = 0
 
@@ -995,6 +1008,98 @@ do
     local saved = MoxieTrackerDB.concentration[key].professions
     check("a fresh snapshot excludes a profession the character never learned", saved.Alchemy == nil)
     check("a fresh snapshot still includes a profession the character does have", saved.Engineering ~= nil)
+end
+
+--------------------------------------------------------------------------
+-- 15. Moxie profession gating (#41 follow-up): the same account-wide
+-- currency-ID leak #40 fixed for Concentration also applies to Moxie's
+-- Pass 2 in ns.CollectTracked -- GetCurrencyInfo returns a valid nonzero
+-- quantity for any profession's Moxie currency any character on the
+-- account has ever earned, not just ones the CURRENT character has
+-- trained. Reported live in-game: a character showed both their own
+-- profession's Moxie and a second profession's Moxie they never had.
+--------------------------------------------------------------------------
+do
+    fixtures.reset()
+    fixtures.setCharacter("Alaria", "Stormrage")
+    fixtures.setCurrency(3256, "Artisan Alchemist's Moxie", 60) -- Alchemy
+    fixtures.setCurrency(3259, "Artisan Engineer's Moxie", 120) -- Engineering
+
+    -- Neither profession learned yet: neither Moxie currency should appear,
+    -- even though both report a nonzero quantity.
+    local tracked = ns.CollectTracked()
+    check("no Moxie row before any profession is learned",
+        findByName(tracked, "Artisan Alchemist's Moxie") == nil
+        and findByName(tracked, "Artisan Engineer's Moxie") == nil)
+
+    -- Alaria has only learned Engineering; Alchemy's currency became known
+    -- account-wide because some other character earned it -- the exact leak
+    -- scenario this fix exists to prevent.
+    fixtures.setOpenProfession(100, Enum.Profession.Engineering, 0)
+    fixtures.setLearnedProfessions(100)
+
+    local trackedAfter = ns.CollectTracked()
+    check("only the learned profession's Moxie appears",
+        findByName(trackedAfter, "Artisan Engineer's Moxie") ~= nil
+        and findByName(trackedAfter, "Artisan Alchemist's Moxie") == nil)
+end
+
+--------------------------------------------------------------------------
+-- 16. ns.IsProfessionLearned survives a logout-time API dropout (#40
+-- follow-up). Confirmed empirically, not from documentation: GetProfessions()
+-- returns nil for all six slots by the time PLAYER_LOGOUT fires, even for a
+-- character whose profession was confirmed live moments earlier in the same
+-- session -- caught via a debug trace written into SavedVariables from
+-- ns.SnapshotConcentration (a chat print during logout is not reliably
+-- seen). That made ns.SnapshotConcentration silently write an empty
+-- professions table for any character whose currency ID was already known
+-- from a different character, since ns.IsProfessionLearned had nothing to
+-- fall back to but "false". ns._learnedProfessionsCache exists so a
+-- confirmed-live result survives the dropout.
+--------------------------------------------------------------------------
+do
+    fixtures.reset()
+    fixtures.setCharacter("Macuahuitl", "Proudmoore")
+    fixtures.setOpenProfession(100, Enum.Profession.Alchemy, 5000)
+    fixtures.setLearnedProfessions(100)
+    fixtures.setCurrency(5000, "Alchemy Concentration", 155, 1000, 600000)
+    ns.DiscoverConcentrationCurrencyID()
+
+    -- Confirmed live, same as the real session: the API is working and
+    -- reports Alchemy learned.
+    assertEqual("learned while the API is live", ns.IsProfessionLearned(Enum.Profession.Alchemy), true)
+
+    -- The logout-time dropout: GetProfessions() now reports nothing at all,
+    -- for every slot, the way it was observed to during PLAYER_LOGOUT.
+    fixtures.setLearnedProfessions()
+    check("with no prior warm call, a dropout with no cache correctly reports not-learned for a new character",
+        ns.IsProfessionLearned(Enum.Profession.Tailoring) == false)
+    assertEqual("a dropout falls back to the cached live result instead of reporting false",
+        ns.IsProfessionLearned(Enum.Profession.Alchemy), true)
+
+    -- The scenario that was actually broken: SnapshotConcentration, called
+    -- from PLAYER_LOGOUT, must still record Alchemy using the cached result.
+    ns.SnapshotConcentration()
+    local key = ns.GetCharacterKey()
+    local saved = MoxieTrackerDB.concentration[key].professions
+    check("a snapshot taken during the dropout still records the profession confirmed live earlier",
+        saved.Alchemy ~= nil and saved.Alchemy.quantity == 155)
+end
+
+do
+    -- ns.WarmLearnedProfessionsCache (PLAYER_ENTERING_WORLD) populates the
+    -- cache without needing any prior ns.IsProfessionLearned call for a
+    -- specific profession.
+    fixtures.reset()
+    fixtures.setCharacter("Helegwath", "Proudmoore")
+    fixtures.setOpenProfession(200, Enum.Profession.Engineering, 6000)
+    fixtures.setLearnedProfessions(200)
+
+    ns.WarmLearnedProfessionsCache()
+    fixtures.setLearnedProfessions() -- simulate the dropout immediately after
+
+    assertEqual("WarmLearnedProfessionsCache alone is enough to survive a dropout",
+        ns.IsProfessionLearned(Enum.Profession.Engineering), true)
 end
 
 print(string.format("%d checks, %d failure(s)", count, failures))
