@@ -52,6 +52,48 @@ function ns.GetCharacterKey()
     return name .. "-" .. realm, name
 end
 
+-- Character display order (#51), shared by the Knowledge Points and
+-- Concentration windows. nil (the default) means pure alphabetical; once set,
+-- it's an explicit array of character keys in the order the user dragged them
+-- into via the Character Order options page.
+function ns.GetCharacterOrder()
+    return MoxieTrackerDB and MoxieTrackerDB.characterOrder
+end
+
+function ns.SetCharacterOrder(orderedKeys)
+    MoxieTrackerDB.characterOrder = orderedKeys
+end
+
+function ns.ClearCharacterOrder()
+    MoxieTrackerDB.characterOrder = nil
+end
+
+-- Pure so it's testable without stubbing MoxieTrackerDB: takes the order as a
+-- parameter instead of reading ns.GetCharacterOrder() itself. A roster entry
+-- not present in orderedKeys (a new alt, or every entry before the user has
+-- ever customized anything) falls back to alphabetical-by-name, appended
+-- after every entry that IS listed -- so new characters keep showing up
+-- automatically instead of needing to be added to the order by hand.
+function ns.SortRosterByCharacterOrder(roster, orderedKeys)
+    local rank = {}
+    if orderedKeys then
+        for i, key in ipairs(orderedKeys) do
+            rank[key] = i
+        end
+    end
+    table.sort(roster, function(a, b)
+        local ra, rb = rank[a.key], rank[b.key]
+        if ra and rb then
+            return ra < rb
+        elseif ra and not rb then
+            return true
+        elseif rb and not ra then
+            return false
+        end
+        return a.name < b.name
+    end)
+end
+
 -- Shown even at zero. A currency the character has not discovered is absent
 -- from the currency list entirely, so these must be queried by ID or they would
 -- silently have no row at all.

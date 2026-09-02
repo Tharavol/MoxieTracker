@@ -319,9 +319,7 @@ function ns.CollectKnowledgeRoster(includeMuted)
         end
     end
 
-    table.sort(roster, function(a, b)
-        return a.name < b.name
-    end)
+    ns.SortRosterByCharacterOrder(roster, ns.GetCharacterOrder())
 
     return roster
 end
@@ -717,11 +715,42 @@ function ns.CollectConcentrationRoster(includeMuted)
         Add(key, entry.name, entry.professions, false)
     end
 
-    table.sort(roster, function(a, b)
-        return a.name < b.name
-    end)
+    ns.SortRosterByCharacterOrder(roster, ns.GetCharacterOrder())
 
     return roster
+end
+
+-- Every character the addon has ever seen, unioned across both rosters (#51):
+-- a character can appear in only one -- a pure gatherer, say, has no
+-- Concentration currency -- so neither ns.CollectKnowledgeRoster nor
+-- ns.CollectConcentrationRoster alone is a complete list. Used only by the
+-- Character Order options page; sorted the same way the two roster windows
+-- are, so the options page shows exactly the order that will render in-game.
+function ns.CollectKnownCharacters()
+    local seen = {}
+    local list = {}
+
+    local function Add(key, name)
+        if not seen[key] then
+            seen[key] = true
+            table.insert(list, { key = key, name = name })
+        end
+    end
+
+    local currentKey, currentName = ns.GetCharacterKey()
+    Add(currentKey, currentName)
+
+    for key, entry in pairs(MoxieTrackerDB.knowledge or {}) do
+        Add(key, entry.name)
+    end
+
+    for key, entry in pairs(MoxieTrackerDB.concentration or {}) do
+        Add(key, entry.name)
+    end
+
+    ns.SortRosterByCharacterOrder(list, ns.GetCharacterOrder())
+
+    return list
 end
 
 -- Flat character+profession list for the options panel's Concentration

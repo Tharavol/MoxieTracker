@@ -17,6 +17,7 @@ MoxieTracker is a World of Warcraft addon for Retail / Midnight that displays th
 - Tracks Crafter's Concentration for every character that has logged in, one row per crafting profession with a projected time until it reaches its cap; regenerates in real time, so an offline character's row is projected forward from its last login rather than shown stale. Colored per profession (default green at 300, editable) with red at the real cap. An option on the Thresholds page can hide a profession's line entirely while it is under threshold, instead of always showing it
 - All three windows (main panel, Knowledge Points, Concentration) are independently movable and remember their own position across the whole account
 - Either roster can mute a whole character or just one of their professions, from its own section in the options panel
+- The order characters are listed in, shared by both rosters, defaults to alphabetical and can be customized with Up/Down buttons on the Character Order options page; a character not yet placed in a custom order is appended alphabetically after the ones that are, so new alts keep showing up automatically
 
 ## Slash commands
 

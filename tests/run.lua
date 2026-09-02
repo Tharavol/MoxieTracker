@@ -1332,6 +1332,68 @@ do
     MoxieTrackerDB.thresholds = nil
 end
 
+--------------------------------------------------------------------------
+-- 17. Character order (#51). ns.SortRosterByCharacterOrder is pure (takes
+-- the order as a parameter), so it needs no MoxieTrackerDB stubbing at all.
+--------------------------------------------------------------------------
+do
+    local roster = {
+        { key = "Charlie-Realm", name = "Charlie" },
+        { key = "Alaria-Realm", name = "Alaria" },
+        { key = "Bram-Realm", name = "Bram" },
+    }
+    ns.SortRosterByCharacterOrder(roster, nil)
+    assertEqual("no custom order falls back to alphabetical, first", roster[1].name, "Alaria")
+    assertEqual("no custom order falls back to alphabetical, second", roster[2].name, "Bram")
+    assertEqual("no custom order falls back to alphabetical, third", roster[3].name, "Charlie")
+end
+
+do
+    local roster = {
+        { key = "Charlie-Realm", name = "Charlie" },
+        { key = "Alaria-Realm", name = "Alaria" },
+        { key = "Bram-Realm", name = "Bram" },
+    }
+    ns.SortRosterByCharacterOrder(roster, { "Charlie-Realm", "Alaria-Realm", "Bram-Realm" })
+    assertEqual("a full custom order is followed exactly, first", roster[1].name, "Charlie")
+    assertEqual("a full custom order is followed exactly, second", roster[2].name, "Alaria")
+    assertEqual("a full custom order is followed exactly, third", roster[3].name, "Bram")
+end
+
+do
+    local roster = {
+        { key = "Charlie-Realm", name = "Charlie" },
+        { key = "Alaria-Realm", name = "Alaria" },
+        { key = "Bram-Realm", name = "Bram" },
+        { key = "Dara-Realm", name = "Dara" },
+    }
+    -- Only Bram is listed; everyone else falls back to alphabetical, appended
+    -- after Bram -- this is what lets a brand new alt keep showing up without
+    -- ever needing to be added to a saved order by hand.
+    ns.SortRosterByCharacterOrder(roster, { "Bram-Realm" })
+    assertEqual("a listed character sorts first regardless of name", roster[1].name, "Bram")
+    assertEqual("unlisted characters fall back to alphabetical, first", roster[2].name, "Alaria")
+    assertEqual("unlisted characters fall back to alphabetical, second", roster[3].name, "Charlie")
+    assertEqual("unlisted characters fall back to alphabetical, third", roster[4].name, "Dara")
+end
+
+do
+    fixtures.reset()
+    fixtures.setCharacter("Alaria", "Stormrage")
+
+    MoxieTrackerDB.knowledge = { ["Bram-Stormrage"] = { name = "Bram" } }
+    MoxieTrackerDB.concentration = { ["Charlie-Stormrage"] = { name = "Charlie" } }
+
+    local known = ns.CollectKnownCharacters()
+    assertEqual("known characters union both rosters plus the current character", #known, 3)
+    assertEqual("known characters default to alphabetical, first", known[1].name, "Alaria")
+    assertEqual("known characters default to alphabetical, second", known[2].name, "Bram")
+    assertEqual("known characters default to alphabetical, third", known[3].name, "Charlie")
+
+    MoxieTrackerDB.knowledge = nil
+    MoxieTrackerDB.concentration = nil
+end
+
 print(string.format("%d checks, %d failure(s)", count, failures))
 if failures > 0 then
     os.exit(1)

@@ -859,6 +859,145 @@ local function CreateConcentrationProfessionsPanel()
 end
 
 --------------------------------------------------------------------------
+-- Character Order subcategory (#51): controls the order characters are
+-- listed in the Knowledge Points and Concentration windows -- one shared
+-- order for both. Alphabetical by default; Up/Down below persists an
+-- explicit order the moment either is first clicked.
+--------------------------------------------------------------------------
+
+local OPTIONS_CHARACTER_ORDER_RESET_Y = 0
+local OPTIONS_CHARACTER_ORDER_FIRST_ROW_Y = OPTIONS_CHARACTER_ORDER_RESET_Y - OPTIONS_ROW_HEIGHT - OPTIONS_SECTION_GAP
+
+-- Recomputes the full known-character list (already sorted per the current
+-- order), swaps the clicked row with its neighbor, and persists the entire
+-- resulting key sequence -- this is what turns a still-alphabetical (or
+-- partially customized) order into a fully explicit one the moment the user
+-- first clicks Up or Down. A character appended at the alphabetical tail
+-- (never customized, or new since the last customization) is baked into the
+-- saved order this same way the next time it's moved.
+local function MoveCharacterOrder(entryKey, direction)
+    local roster = ns.CollectKnownCharacters()
+    local index
+    for i, entry in ipairs(roster) do
+        if entry.key == entryKey then
+            index = i
+            break
+        end
+    end
+    if not index then
+        return
+    end
+
+    local swapWith = index + direction
+    if swapWith < 1 or swapWith > #roster then
+        return
+    end
+
+    roster[index], roster[swapWith] = roster[swapWith], roster[index]
+
+    local newOrder = {}
+    for i, entry in ipairs(roster) do
+        newOrder[i] = entry.key
+    end
+    ns.SetCharacterOrder(newOrder)
+
+    ns.RefreshCharacterOrderOptions()
+
+    -- #50: every control here that redraws a roster window must check
+    -- ns.frame:IsShown() first, matching whether the crafting window is
+    -- actually open -- six other call sites redrew the Concentration window
+    -- unconditionally before that fix, popping it up with no profession open.
+    if ns.frame:IsShown() then
+        ns.UpdateKnowledgeDisplay()
+        ns.UpdateConcentrationDisplay()
+    end
+end
+
+-- Not built on EnsureListRow: this row needs a label plus two buttons, and
+-- EnsureListRow's pooled shape only ever wraps a single checkbox. Each row is
+-- instead its own container Frame, positioned via the same PositionRow every
+-- other page uses, with the label and buttons anchored inside it.
+local function EnsureCharacterOrderRow(panel, index)
+    local row = panel.orderRows[index]
+    if not row then
+        row = CreateFrame("Frame", nil, panel.content)
+        row:SetSize(OPTIONS_CONTENT_WIDTH, OPTIONS_ROW_HEIGHT)
+
+        row.label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        row.label:SetPoint("LEFT", row, "LEFT", 16, 0)
+        row.label:SetWidth(150)
+        row.label:SetJustifyH("LEFT")
+
+        row.upButton = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+        row.upButton:SetSize(40, 20)
+        row.upButton:SetText("Up")
+        row.upButton:SetPoint("LEFT", row.label, "RIGHT", 8, 0)
+        row.upButton:SetScript("OnClick", function()
+            MoveCharacterOrder(row.entryKey, -1)
+        end)
+
+        row.downButton = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+        row.downButton:SetSize(40, 20)
+        row.downButton:SetText("Down")
+        row.downButton:SetPoint("LEFT", row.upButton, "RIGHT", 4, 0)
+        row.downButton:SetScript("OnClick", function()
+            MoveCharacterOrder(row.entryKey, 1)
+        end)
+
+        panel.orderRows[index] = row
+    end
+    return row
+end
+
+function ns.RefreshCharacterOrderOptions()
+    local panel = ns.characterOrderPanel
+
+    local roster = ns.CollectKnownCharacters()
+
+    for _, row in ipairs(panel.orderRows) do
+        row:Hide()
+    end
+
+    for index, entry in ipairs(roster) do
+        local row = EnsureCharacterOrderRow(panel, index)
+        row.entryKey = entry.key
+        row.label:SetText(entry.name)
+        row.upButton:SetEnabled(index > 1)
+        row.downButton:SetEnabled(index < #roster)
+        PositionRow(panel, row, OPTIONS_CHARACTER_ORDER_FIRST_ROW_Y - ((index - 1) * OPTIONS_ROW_HEIGHT))
+        row:Show()
+    end
+
+    local rowCount = math.max(#roster, 1)
+    local listBottomY = OPTIONS_CHARACTER_ORDER_FIRST_ROW_Y - (rowCount * OPTIONS_ROW_HEIGHT)
+    panel.content:SetHeight(math.max(1, -listBottomY + OPTIONS_BOTTOM_MARGIN))
+    panel.scrollFrame:UpdateScrollChildRect()
+end
+
+local function CreateCharacterOrderPanel()
+    local panel = CreatePanelShell("MoxieTrackerCharacterOrderPanel", "Character Order",
+        "Controls the order characters are listed in the Knowledge Points and Concentration windows. Defaults " ..
+            "to alphabetical; use Up/Down to customize. This is a global setting.")
+    panel.orderRows = {}
+
+    local resetOrderButton = CreateFrame("Button", nil, panel.content, "UIPanelButtonTemplate")
+    resetOrderButton:SetSize(140, 22)
+    resetOrderButton:SetPoint("TOPLEFT", panel.content, "TOPLEFT", 16, OPTIONS_CHARACTER_ORDER_RESET_Y)
+    resetOrderButton:SetText("Reset to alphabetical")
+    resetOrderButton:SetScript("OnClick", function()
+        ns.ClearCharacterOrder()
+        ns.RefreshCharacterOrderOptions()
+        if ns.frame:IsShown() then
+            ns.UpdateKnowledgeDisplay()
+            ns.UpdateConcentrationDisplay()
+        end
+    end)
+
+    panel:SetScript("OnShow", ns.RefreshCharacterOrderOptions)
+    ns.characterOrderPanel = panel
+end
+
+--------------------------------------------------------------------------
 -- Registration.
 --------------------------------------------------------------------------
 
@@ -869,6 +1008,7 @@ CreateCharactersPanel()
 CreateCharacterProfessionsPanel()
 CreateConcentrationPanel()
 CreateConcentrationProfessionsPanel()
+CreateCharacterOrderPanel()
 
 if Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterCanvasLayoutSubcategory
     and Settings.RegisterAddOnCategory then
@@ -881,6 +1021,7 @@ if Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterCanva
     Settings.RegisterCanvasLayoutSubcategory(generalCategory, ns.concentrationPanel, "Concentration")
     Settings.RegisterCanvasLayoutSubcategory(generalCategory, ns.concentrationProfessionsPanel,
         "Concentration Professions")
+    Settings.RegisterCanvasLayoutSubcategory(generalCategory, ns.characterOrderPanel, "Character Order")
 end
 
 function ns.OpenOptions()

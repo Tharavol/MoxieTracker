@@ -5,6 +5,11 @@ All notable changes to MoxieTracker are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0] - 2026-09-02
+
+### Added
+- A "Character Order" options page (#51) sets the order characters are listed in, shared by both the Knowledge Points and Concentration windows -- alphabetical by default. Up/Down buttons next to each character reorder them; the custom order takes effect immediately, and "Reset to alphabetical" clears it. A character not yet placed in a saved custom order -- a brand new alt, or every character before the order is ever touched -- is appended alphabetically after the ones that are, so new characters keep showing up automatically. `/moxie reset settings` now also resets this, and `/moxie status` reports whether a custom order is set.
+
 ## [1.9.7] - 2026-09-02
 
 ### Fixed
@@ -353,6 +358,7 @@ during load; that tag was removed and reused for this release.
 - The full GPL-3.0 text, replacing a truncated stub that named the license but
   omitted its terms.
 
+[1.10.0]: https://github.com/Tharavol/MoxieTracker/compare/v1.9.7...v1.10.0
 [1.9.7]: https://github.com/Tharavol/MoxieTracker/compare/v1.9.6...v1.9.7
 [1.9.6]: https://github.com/Tharavol/MoxieTracker/compare/v1.9.5...v1.9.6
 [1.9.5]: https://github.com/Tharavol/MoxieTracker/compare/v1.9.4...v1.9.5

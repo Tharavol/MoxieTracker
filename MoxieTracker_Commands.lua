@@ -138,6 +138,7 @@ local function HandleReset(arg1)
         MoxieTrackerDB.hideConcentrationWindow = nil
         MoxieTrackerDB.thresholds = nil
         MoxieTrackerDB.hideConcentrationUnderThreshold = nil
+        MoxieTrackerDB.characterOrder = nil
         MoxieTrackerDB.debugLogging = nil
         ns.frame.pinned = false
         -- Three separate pages now (#41); only refresh whichever is
@@ -162,6 +163,9 @@ local function HandleReset(arg1)
         end
         if ns.concentrationProfessionsPanel:IsShown() then
             ns.RefreshConcentrationProfessionsOptions()
+        end
+        if ns.characterOrderPanel:IsShown() then
+            ns.RefreshCharacterOrderOptions()
         end
         ns.RefreshVisibility()
         ns.Print("settings restored to defaults.")
@@ -227,6 +231,13 @@ local function PrintStatus()
         ns.Print("threshold overrides: none (using defaults)")
     end
 
+    local characterOrder = ns.GetCharacterOrder()
+    if characterOrder then
+        ns.Print("character order: custom (%d character(s))", #characterOrder)
+    else
+        ns.Print("character order: alphabetical (default)")
+    end
+
     ns.Print("debug logging: %s", MoxieTrackerDB.debugLogging and "on" or "off")
 end
 
@@ -280,7 +291,7 @@ local COMMANDS = {
             "/moxie reset position - move all three windows back to their default positions",
             "/moxie reset settings - restore hidden rows, muted characters/professions, the Moxie, Knowledge " ..
                 "Points and Concentration window toggles, pin state, thresholds, the Concentration " ..
-                "under-threshold display toggle, and debug logging to defaults"
+                "under-threshold display toggle, character order, and debug logging to defaults"
         },
         handler = HandleReset
     },
