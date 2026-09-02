@@ -59,7 +59,7 @@ tests/stub.lua installs a fake C_CurrencyInfo, C_Item, and C_AddOns (configurabl
 - The panel matches the crafting frame's strata and sits ten levels above it. At UIParent's default MEDIUM strata it drew beneath the crafting window and the addon panes docked to it, such as CraftSim's.
 - Panel width is measured from the widest rendered row via GetStringWidth, floored at 240. Color escapes do not count toward that measurement.
 - MoxieTrackerDB is account-wide (## SavedVariables). It was per-character until v1.1.0, which meant repositioning on every character. Switching scope orphans the old per-character files under WTF/Account/<ACCOUNT>/<Realm>/<Character>/SavedVariables/; the client ignores them and they can be deleted.
-- The client interface version is 120007. Changes to the TOC require a full client restart, not a UI reload.
+- The TOC's `## Interface` line is kept current automatically by the daily `toc-interface-check.yml` workflow (`p3lim/toc-interface-updater`), which commits a bump straight to main when Blizzard ships a new build; don't hand-edit it and don't expect this doc to track the current number. Changes to the TOC still require a full client restart, not a UI reload.
 - MoxieTrackerDB is initialized in the UI file's ADDON_LOADED handler, gated on the addon's own name (captured as ADDON_NAME from each file's vararg), rather than at file scope. SavedVariables are only guaranteed populated once ADDON_LOADED fires for this addon; initializing earlier would create a throwaway table that the client's own load then discards. `ns.GetOffset` is the one accessor that can run before that point (the UI file's file-scope `ns.ApplyAnchor()` call), so it tolerates MoxieTrackerDB being nil and falls back to the default offset.
 - The version shown at login and in the options panel title comes from `ns.GetVersion`, which reads C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version") and falls back to "dev" when the TOC still has the literal @project-version@ placeholder (an unpackaged copy). The login message respects MoxieTrackerDB.suppressLoginMessage, toggled from a checkbox in the options panel; this is read once at PLAYER_LOGIN, which is why it depends on MoxieTrackerDB already being initialized by ADDON_LOADED. Neither the login print nor the options title adds its own "v" prefix, since the version string from the release tag already carries one.
 - /moxie and /moxietracker are both registered (SLASH_MOXIETRACKER1/2); SlashCmdList registration is last-writer-wins, so the longer alias is a fallback in case another addon takes the short one.
@@ -79,8 +79,7 @@ tests/stub.lua installs a fake C_CurrencyInfo, C_Item, and C_AddOns (configurabl
 
 ## Next steps
 
-- The panel sits well down the right edge (-440). On a short crafting window or a small resolution it could run past the bottom of the screen; SetClampedToScreen keeps it visible but would break the chosen alignment. Worth checking at the smallest resolution in use.
-- Continue development from another machine by cloning from GitHub.
+- `OPTIONS_CONTENT_HEIGHT` (500x460 for the options scroll frame) hasn't been re-verified in-game since the three lists were merged into one taller scroll region -- worth confirming nothing clips now that the Concentration mute pages have grown the panel further.
 
 ## Local setup checklist
 

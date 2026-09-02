@@ -4,12 +4,11 @@ manual-changelog:
   filename: CHANGELOG.md
   markup-type: markdown
 
-# docs/ is kept in the package, matching what the previous hand-rolled zip
-# shipped. Note that it currently holds only HANDOFF.md, which is a developer
-# document rather than user-facing.
+# docs/ holds only developer-facing material (HANDOFF.md, CURRENCY_DISCOVERY.md),
+# not anything end users need, so it stays out of the release archive.
 ignore:
   - .github
   - .luacheckrc
   - tests
   - CHANGELOG.md
-  - TODO.md
+  - docs

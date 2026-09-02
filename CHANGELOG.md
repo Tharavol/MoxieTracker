@@ -5,6 +5,16 @@ All notable changes to MoxieTracker are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.7] - 2026-09-02
+
+### Fixed
+- `docs/HANDOFF.md` claimed the client interface version is a fixed number (120007) that was actually bumped to 120100 back in #34; it now points at the `toc-interface-check.yml` workflow that keeps the TOC's `## Interface` current automatically instead of naming a number that will go stale again the next time Blizzard ships a build.
+- Its "Next steps" section still listed a small-resolution panel-clipping concern that `SetClampedToScreen(true)` had already addressed, plus a "clone from GitHub" line that only restated the setup checklist right below it; replaced both with the one next step that had no bullet at all despite the file's own dev notes saying "see Next steps" for it -- re-verifying `OPTIONS_CONTENT_HEIGHT` in-game now that the options scroll region has grown since it was last checked.
+
+### Changed
+- `TODO.md` -- a permanent design-rationale doc for the Knowledge Points (#38) and Concentration (#40) currency-discovery work, not an actual to-do list -- is now `docs/CURRENCY_DISCOVERY.md`; the three places pointing at it (two source comments, the README credits line) were updated to match.
+- `docs/` (`HANDOFF.md` and the renamed `CURRENCY_DISCOVERY.md`, both developer-facing) no longer ships inside the release archive.
+
 ## [1.9.6] - 2026-08-27
 
 ### Added
@@ -343,6 +353,8 @@ during load; that tag was removed and reused for this release.
 - The full GPL-3.0 text, replacing a truncated stub that named the license but
   omitted its terms.
 
+[1.9.7]: https://github.com/Tharavol/MoxieTracker/compare/v1.9.6...v1.9.7
+[1.9.6]: https://github.com/Tharavol/MoxieTracker/compare/v1.9.5...v1.9.6
 [1.9.5]: https://github.com/Tharavol/MoxieTracker/compare/v1.9.4...v1.9.5
 [1.9.4]: https://github.com/Tharavol/MoxieTracker/compare/v1.9.3...v1.9.4
 [1.9.3]: https://github.com/Tharavol/MoxieTracker/compare/v1.9.2...v1.9.3

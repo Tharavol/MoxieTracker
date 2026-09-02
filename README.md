@@ -53,7 +53,7 @@ Release history is in [CHANGELOG.md](CHANGELOG.md).
 - Created by Tharavol
 - Initial scaffold assisted by GitHub Copilot
 - Midnight API fixes, crafting window integration, and currency thresholds by Claude Opus 5 (Anthropic), working through Claude Code
-- Concentration currency discovery and its regen-projection math were confirmed against [derfloh205/CraftSim](https://github.com/derfloh205/CraftSim) (MIT licensed), which already tracks Concentration; no CraftSim code is included in MoxieTracker (see TODO.md's Sources section for what was learned there)
+- Concentration currency discovery and its regen-projection math were confirmed against [derfloh205/CraftSim](https://github.com/derfloh205/CraftSim) (MIT licensed), which already tracks Concentration; no CraftSim code is included in MoxieTracker (see docs/CURRENCY_DISCOVERY.md's Sources section for what was learned there)
 
 ## License
 

@@ -123,7 +123,7 @@ ns.KNOWLEDGE_PROFESSIONS = {
 -- way Moxie and Knowledge do: it is resolved live per profession via
 -- C_TradeSkillUI.GetConcentrationCurrencyID(skillLineID), confirmed against
 -- derfloh205/CraftSim's ConcentrationTracker.lua/ConcentrationData.lua
--- (see TODO.md's Sources section). Only the 8 crafting professions carry
+-- (see docs/CURRENCY_DISCOVERY.md's Sources section). Only the 8 crafting professions carry
 -- Concentration -- the 3 gathering professions among MoxieTracker's eleven
 -- (Herbalism, Mining, Skinning) do not, same exclusion CraftSim's
 -- GATHERING_PROFESSIONS check makes.

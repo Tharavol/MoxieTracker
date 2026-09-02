@@ -385,7 +385,7 @@ end
 -- nil for a gathering profession (no Concentration currency exists) or when
 -- no profession's crafting window is open. See ns.CONCENTRATION_PROFESSIONS
 -- in the Config file for why this is a live per-profession lookup rather
--- than a static ID table, and TODO.md's Sources section for how the API
+-- than a static ID table, and docs/CURRENCY_DISCOVERY.md's Sources section for how the API
 -- shape was confirmed.
 function ns.DiscoverConcentrationCurrencyID()
     if not C_TradeSkillUI or not C_TradeSkillUI.GetProfessionChildSkillLineID
