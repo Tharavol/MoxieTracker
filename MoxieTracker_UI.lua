@@ -461,24 +461,45 @@ local function RefreshAllWindows()
     ns.RefreshConcentrationTicker()
 end
 
--- Resyncs all three windows' strata/level to the crafting frame's current
--- ones. Blizzard's default UI panels (Mail, Bags, Professions, ...) call
--- :Raise() on themselves every time they're shown, bumping that panel's own
--- frame level above whatever else was raised most recently -- e.g. opening
--- Mail after Professions puts Mail back on top of it. A level read once, at
--- login, goes stale the moment anything else gets raised afterwards (#52):
--- Professions keeps re-raising itself correctly on every show, but these
--- three windows never re-synced to match, so Concentration (and its
--- siblings) could end up back below a panel like Mail that Professions
--- itself was still drawing above. Called every time the trackers are shown
--- rather than once at hook time, so it can never go stale the same way.
+-- Blizzard's default full-window panels (Mail, Bags, Professions, ...) all
+-- set the XML `toplevel="true"` flag, which makes a panel re-raise its own
+-- FrameLevel above every sibling *in its stratum* on every mouse click, not
+-- just when it's shown (confirmed live: with Professions and Mail both
+-- freshly queried at FrameLevel 1 in the same MEDIUM stratum, Mail still drew
+-- on top after being clicked into). Matching the crafting frame's level, even
+-- re-synced on every show (as this used to do), can never reliably win that
+-- fight -- Mail can out-click Professions at any moment, with no event this
+-- addon could react to in time (#52 again, first "fix" included below this
+-- comment in git history did not actually hold up in-game).
+--
+-- FrameStrata beats FrameLevel unconditionally, regardless of anyone's
+-- click-raising within a lower stratum. Sitting one whole stratum above
+-- whatever the crafting frame currently uses -- rather than matching it --
+-- guarantees these three windows stay on top of it and of every other
+-- default panel at that same (or lower) stratum, permanently, with no
+-- ongoing resync needed to keep winning.
+local STRATA_ORDER = {
+    "BACKGROUND", "LOW", "MEDIUM", "HIGH", "DIALOG", "FULLSCREEN", "FULLSCREEN_DIALOG", "TOOLTIP",
+}
+local STRATA_INDEX = {}
+for index, name in ipairs(STRATA_ORDER) do
+    STRATA_INDEX[name] = index
+end
+
+local function StrataAbove(strata)
+    local index = STRATA_INDEX[strata] or STRATA_INDEX.MEDIUM
+    return STRATA_ORDER[math.min(index + 1, #STRATA_ORDER)]
+end
+
 local function SyncWindowLevels()
     if not ns.craftingFrame then
         return
     end
+    local strata = StrataAbove(ns.craftingFrame:GetFrameStrata())
+    local level = ns.craftingFrame:GetFrameLevel() + 10
     for _, window in ipairs({ frame, knowledgeFrame, concentrationFrame }) do
-        window:SetFrameStrata(ns.craftingFrame:GetFrameStrata())
-        window:SetFrameLevel(ns.craftingFrame:GetFrameLevel() + 10)
+        window:SetFrameStrata(strata)
+        window:SetFrameLevel(level)
     end
 end
 
