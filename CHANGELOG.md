@@ -5,6 +5,11 @@ All notable changes to MoxieTracker are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.1] - 2026-09-23
+
+### Fixed
+- The Concentration window (and, less visibly, the main and Knowledge Points windows) could end up layered behind an unrelated default UI panel like Mail even while the crafting window itself stayed correctly on top of it (#52). `HookCraftingFrame` matched all three windows' strata/level to the crafting frame's own only once, at login; Blizzard's default panels re-raise themselves above whatever else was last raised every time they're shown, so the crafting frame's own level kept climbing correctly on each reopen while the addon's one-time snapshot went stale the first time something else got raised afterward. The sync now reruns every time the trackers are actually shown (`ns.RefreshVisibility`), so it can't go stale the same way again.
+
 ## [1.10.0] - 2026-09-02
 
 ### Added

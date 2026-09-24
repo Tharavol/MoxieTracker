@@ -461,8 +461,30 @@ local function RefreshAllWindows()
     ns.RefreshConcentrationTicker()
 end
 
+-- Resyncs all three windows' strata/level to the crafting frame's current
+-- ones. Blizzard's default UI panels (Mail, Bags, Professions, ...) call
+-- :Raise() on themselves every time they're shown, bumping that panel's own
+-- frame level above whatever else was raised most recently -- e.g. opening
+-- Mail after Professions puts Mail back on top of it. A level read once, at
+-- login, goes stale the moment anything else gets raised afterwards (#52):
+-- Professions keeps re-raising itself correctly on every show, but these
+-- three windows never re-synced to match, so Concentration (and its
+-- siblings) could end up back below a panel like Mail that Professions
+-- itself was still drawing above. Called every time the trackers are shown
+-- rather than once at hook time, so it can never go stale the same way.
+local function SyncWindowLevels()
+    if not ns.craftingFrame then
+        return
+    end
+    for _, window in ipairs({ frame, knowledgeFrame, concentrationFrame }) do
+        window:SetFrameStrata(ns.craftingFrame:GetFrameStrata())
+        window:SetFrameLevel(ns.craftingFrame:GetFrameLevel() + 10)
+    end
+end
+
 function ns.RefreshVisibility()
     if frame.craftOpen or frame.pinned then
+        SyncWindowLevels()
         ns.ApplyAnchor()
         frame:Show()
         -- Both show or hide themselves based on whether there's anything to
@@ -623,13 +645,12 @@ local function HookCraftingFrame(globalName)
 
     -- UIParent's default MEDIUM strata draws below the crafting window and the
     -- addon panes docked to it, so an overlapping panel would hide behind them.
-    -- Match the crafting frame's strata and sit above it. All three windows
-    -- get the same treatment so neither Knowledge Points nor Concentration
-    -- ends up behind the crafting frame while the main window sits above it.
-    for _, window in ipairs({ frame, knowledgeFrame, concentrationFrame }) do
-        window:SetFrameStrata(target:GetFrameStrata())
-        window:SetFrameLevel(target:GetFrameLevel() + 10)
-    end
+    -- Match the crafting frame's strata and sit above it. See SyncWindowLevels
+    -- above for why this alone (a one-time snapshot) isn't enough on its own --
+    -- RefreshVisibility calls it again on every show, this call just gets the
+    -- windows onto the right strata/level immediately rather than waiting for
+    -- the first one.
+    SyncWindowLevels()
 
     target:HookScript("OnShow", function()
         SetCraftOpen(true)
