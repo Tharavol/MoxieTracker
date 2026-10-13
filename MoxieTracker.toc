@@ -1,4 +1,4 @@
-## Interface: 120100
+## Interface: 120105
 ## Title: MoxieTracker
 ## Notes: Displays current character Artisan Moxie, Shard of Dundun, Unalloyed Abundance, and Fused Vitality, plus per-character Knowledge Points and Concentration rosters, in three movable windows.
 ## Author: Tharavol
