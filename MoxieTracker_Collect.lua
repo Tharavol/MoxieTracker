@@ -41,6 +41,15 @@ function ns.GetQuantityColor(entry)
     return ns.WHITE
 end
 
+-- Quest rows (#53) carry a completion flag, not a count, so they get a status
+-- word instead of a number: green once done for the week, yellow until then.
+function ns.GetQuestStatus(entry)
+    if entry.completed then
+        return ns.GREEN, "Done"
+    end
+    return ns.YELLOW, "Not done"
+end
+
 -- Name only. Descriptions cross-reference each other -- Shard of Dundun's
 -- description mentions Unalloyed Abundance -- so matching them pulls in
 -- unrelated currencies that merely name one of ours.
@@ -68,14 +77,16 @@ end
 -- to get Moxie at all.
 function ns.CollectTracked(includeHidden, excludeMoxie)
     local tracked = {}
-    local seenID, seenItemID, seenName = {}, {}, {}
+    local seenID, seenItemID, seenQuestID, seenName = {}, {}, {}, {}
 
     -- Deduped by both ID and name: the keyword fallback can produce an entry
     -- whose link failed to resolve, leaving it with no ID to match on.
-    local function Add(currencyID, itemID, name, quantity)
+    -- Returns the inserted entry, so a pass can attach fields of its own.
+    local function Add(currencyID, itemID, name, quantity, questID)
         name = name or "Currency"
         local nameKey = name:lower()
-        if (currencyID and seenID[currencyID]) or (itemID and seenItemID[itemID]) or seenName[nameKey] then
+        if (currencyID and seenID[currencyID]) or (itemID and seenItemID[itemID])
+            or (questID and seenQuestID[questID]) or seenName[nameKey] then
             return
         end
         if currencyID then
@@ -84,24 +95,30 @@ function ns.CollectTracked(includeHidden, excludeMoxie)
         if itemID then
             seenItemID[itemID] = true
         end
+        if questID then
+            seenQuestID[questID] = true
+        end
         seenName[nameKey] = true
 
         -- Marked seen before the hidden check, so a hidden row cannot slip back
         -- in through a later pass that identifies it a different way.
-        local key = ns.EntryKey(currencyID, itemID, name)
+        local key = ns.EntryKey(currencyID, itemID, name, questID)
         local hidden = ns.IsHidden(key)
         if hidden and not includeHidden then
             return
         end
 
-        table.insert(tracked, {
+        local entry = {
             name = name,
             quantity = quantity or 0,
             currencyID = currencyID,
             itemID = itemID,
+            questID = questID,
             key = key,
             hidden = hidden,
-        })
+        }
+        table.insert(tracked, entry)
+        return entry
     end
 
     -- Pass 1: by ID, shown regardless of quantity.
@@ -109,6 +126,17 @@ function ns.CollectTracked(includeHidden, excludeMoxie)
         local info = C_CurrencyInfo.GetCurrencyInfo(currencyID)
         if info and info.name then
             Add(currencyID, nil, info.name, info.quantity)
+        end
+    end
+
+    -- Pass 1b (#53): weekly quests, always listed. Per-character completion,
+    -- not the account-wide flag -- see ns.TRACKED_QUESTS for why.
+    for _, quest in ipairs(ns.TRACKED_QUESTS) do
+        local name = C_QuestLog.GetTitleForQuestID(quest.questID) or quest.name
+        local entry = Add(nil, nil, name, 0, quest.questID)
+        if entry then
+            entry.completed = C_QuestLog.IsQuestFlaggedCompleted(quest.questID) == true
+            entry.sortAfter = quest.sortAfter
         end
     end
 
@@ -159,8 +187,17 @@ function ns.CollectTracked(includeHidden, excludeMoxie)
         end
     end
 
+    -- A row with `sortAfter` (#53) sorts as its anchor currency's name plus
+    -- "\1", which lands it directly after that row and ahead of any name the
+    -- anchor's is a prefix of. The anchor's name is read by ID rather than
+    -- from `tracked`, so the pin holds even while the anchor row is hidden.
+    local sortName = {}
+    for _, entry in ipairs(tracked) do
+        local anchor = entry.sortAfter and C_CurrencyInfo.GetCurrencyInfo(entry.sortAfter)
+        sortName[entry] = (anchor and anchor.name) and (anchor.name .. "\1") or entry.name
+    end
     table.sort(tracked, function(a, b)
-        return a.name < b.name
+        return sortName[a] < sortName[b]
     end)
 
     return tracked

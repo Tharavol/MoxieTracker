@@ -135,6 +135,70 @@ do
     assertEqual("name-fallback key form", ns.EntryKey(nil, nil, "Some Currency"), "name:some currency")
     assertEqual("name-fallback key is lowercased", ns.EntryKey(nil, nil, "MiXeD CaSe"), "name:mixed case")
     assertEqual("currency ID takes precedence over item ID", ns.EntryKey(3376, 245345, "x"), "currency:3376")
+    assertEqual("quest key form", ns.EntryKey(nil, nil, "Abundant Offerings", 89507), "quest:89507")
+end
+
+--------------------------------------------------------------------------
+-- 2b. Weekly quest rows (#53): always listed, status from per-character
+-- completion, fallback name while uncached, hideable, and pinned directly
+-- below Shard of Dundun despite the alphabetical sort.
+--------------------------------------------------------------------------
+do
+    fixtures.reset()
+
+    local quest = findByName(ns.CollectTracked(), "Abundant Offerings")
+    check("quest row listed with its fallback name while uncached", quest ~= nil)
+    check("uncached quest row reads as not completed", quest ~= nil and quest.completed == false)
+    assertEqual("quest row carries its persisted key", quest and quest.key, "quest:89507")
+
+    fixtures.setQuest(89507, "Abundant Offerings (localized)", false)
+    check("quest row uses the client's title once cached",
+        findByName(ns.CollectTracked(), "Abundant Offerings (localized)") ~= nil)
+
+    fixtures.setQuest(89507, "Abundant Offerings", true)
+    quest = findByName(ns.CollectTracked(), "Abundant Offerings")
+    check("completed quest row reads as completed", quest ~= nil and quest.completed == true)
+
+    local doneColor, doneText = ns.GetQuestStatus({ completed = true })
+    assertEqual("completed quest status color", doneColor, GREEN)
+    assertEqual("completed quest status text", doneText, "Done")
+    local openColor, openText = ns.GetQuestStatus({ completed = false })
+    assertEqual("open quest status color", openColor, YELLOW)
+    assertEqual("open quest status text", openText, "Not done")
+
+    MoxieTrackerDB.hidden = { ["quest:89507"] = true }
+    check("hidden quest row excluded from the default view",
+        findByName(ns.CollectTracked(), "Abundant Offerings") == nil)
+    quest = findByName(ns.CollectTracked(true), "Abundant Offerings")
+    check("hidden quest row listed and flagged with includeHidden", quest ~= nil and quest.hidden == true)
+end
+
+do
+    fixtures.reset()
+    fixtures.setLearnedProfessions(101)
+    fixtures.setOpenProfession(101, Enum.Profession.Alchemy)
+    fixtures.closeProfession()
+    fixtures.setCurrency(3256, "Artisan Alchemist's Moxie", 50)
+    fixtures.setCurrency(3376, "Shard of Dundun", 5)
+    fixtures.setCurrency(3377, "Unalloyed Abundance", 900)
+    fixtures.setItem(245345, "Fused Vitality", 3)
+    fixtures.setQuest(89507, "Abundant Offerings", false)
+
+    local names = {}
+    for _, entry in ipairs(ns.CollectTracked()) do
+        table.insert(names, entry.name)
+    end
+    assertEqual("tracked row order with the quest pinned below Shard of Dundun", table.concat(names, " | "),
+        "Artisan Alchemist's Moxie | Fused Vitality | Shard of Dundun | Abundant Offerings | Unalloyed Abundance")
+
+    -- The pin reads its anchor's name by ID, so it holds while that row is hidden.
+    MoxieTrackerDB.hidden = { ["currency:3376"] = true }
+    names = {}
+    for _, entry in ipairs(ns.CollectTracked()) do
+        table.insert(names, entry.name)
+    end
+    assertEqual("quest keeps its slot while Shard of Dundun is hidden", table.concat(names, " | "),
+        "Artisan Alchemist's Moxie | Fused Vitality | Abundant Offerings | Unalloyed Abundance")
 end
 
 --------------------------------------------------------------------------

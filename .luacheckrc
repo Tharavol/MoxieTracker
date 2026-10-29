@@ -24,6 +24,7 @@ read_globals = {
     "C_AddOns",
     "C_CurrencyInfo",
     "C_Item",
+    "C_QuestLog",
     "C_Timer",
     "C_TradeSkillUI",
     "CreateFrame",

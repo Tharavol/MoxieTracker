@@ -1,11 +1,12 @@
 # MoxieTracker
 
-MoxieTracker is a World of Warcraft addon for Retail / Midnight that displays the current character's Artisan Moxie, Shard of Dundun, and Unalloyed Abundance currency values, plus the Fused Vitality item count, in a small movable window, with a Knowledge Points roster and a Concentration roster in their own windows beneath it. The main panel appears automatically when the crafting window opens and hides again when it closes.
+MoxieTracker is a World of Warcraft addon for Retail / Midnight that displays the current character's Artisan Moxie, Shard of Dundun, and Unalloyed Abundance currency values, the Fused Vitality item count, and whether the Abundant Offerings weekly quest is done, in a small movable window, with a Knowledge Points roster and a Concentration roster in their own windows beneath it. The main panel appears automatically when the crafting window opens and hides again when it closes.
 
 ## Features
 
 - Tracks Artisan Moxie for all eleven professions, Shard of Dundun, and Unalloyed Abundance, matched by currency ID so it works on any client locale
 - Tracks Fused Vitality (item 245345), counted across bags, bank, and reagent bank
+- Shows whether the current character has completed the Abundant Offerings weekly quest (quest 89507) this week, directly beneath Shard of Dundun: green "Done" once turned in, yellow "Not done" until then. Completion is per character, so an alt that has done it does not mark this character done
 - Shard of Dundun, Unalloyed Abundance, and Fused Vitality always show, even at zero; moxie rows appear only for professions the character actually has
 - A "Show Moxie" checkbox on the options panel's General page hides Moxie from the tracker entirely, a global setting independent of any character; individual professions can be hidden from their own "Moxie Professions" page
 - Any row can be hidden from the options panel, under Options > AddOns > MoxieTracker or `/moxie options`

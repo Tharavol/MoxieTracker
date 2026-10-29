@@ -72,6 +72,16 @@ local function PrintDebugDump()
             ns.IsHidden(ns.EntryKey(nil, item.itemID)) and " |cffff3333(hidden)|r" or "")
     end
 
+    ns.Print("tracked quests")
+    for _, quest in ipairs(ns.TRACKED_QUESTS) do
+        local name = C_QuestLog.GetTitleForQuestID(quest.questID)
+        ns.Print("  [quest] %d %s = %s%s",
+            quest.questID,
+            name or (quest.name .. " |cffff3333(uncached)|r"),
+            C_QuestLog.IsQuestFlaggedCompleted(quest.questID) and "done" or "not done",
+            ns.IsHidden(ns.EntryKey(nil, nil, nil, quest.questID)) and " |cffff3333(hidden)|r" or "")
+    end
+
     local hiddenCount = 0
     if MoxieTrackerDB.hidden then
         for key in pairs(MoxieTrackerDB.hidden) do

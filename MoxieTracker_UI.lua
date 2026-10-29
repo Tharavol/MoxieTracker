@@ -232,6 +232,10 @@ local function EnsureLine(owner, index)
                 GameTooltip:SetOwner(self, "ANCHOR_TOPRIGHT")
                 GameTooltip:SetItemByID(self.itemID)
                 GameTooltip:Show()
+            elseif self.questID then
+                GameTooltip:SetOwner(self, "ANCHOR_TOPRIGHT")
+                GameTooltip:SetHyperlink("quest:" .. self.questID)
+                GameTooltip:Show()
             end
         end)
         line:SetScript("OnLeave", function()
@@ -256,11 +260,12 @@ function ns.UpdateDisplay()
     local widest = 0
     local lineIndex = 0
 
-    local function RenderLine(text, currencyID, itemID)
+    local function RenderLine(text, currencyID, itemID, questID)
         lineIndex = lineIndex + 1
         local line = EnsureLine(frame, lineIndex)
         line.currencyID = currencyID
         line.itemID = itemID
+        line.questID = questID
         line.text:SetText(text)
         line:Show()
         widest = math.max(widest, line.text:GetStringWidth())
@@ -273,8 +278,13 @@ function ns.UpdateDisplay()
         RenderLine(everythingHidden and "All rows hidden - /moxie options" or "No tracked currencies")
     else
         for _, entry in ipairs(tracked) do
-            RenderLine(string.format("%s: %s%d|r", entry.name, ns.GetQuantityColor(entry), entry.quantity),
-                entry.currencyID, entry.itemID)
+            if entry.questID then
+                local color, status = ns.GetQuestStatus(entry)
+                RenderLine(string.format("%s: %s%s|r", entry.name, color, status), nil, nil, entry.questID)
+            else
+                RenderLine(string.format("%s: %s%d|r", entry.name, ns.GetQuantityColor(entry), entry.quantity),
+                    entry.currencyID, entry.itemID)
+            end
         end
     end
 
@@ -585,11 +595,22 @@ SafeRegisterEvent("ADDON_LOADED")
 -- client has cached the item and its real name replaces the fallback.
 SafeRegisterEvent("BAG_UPDATE_DELAYED")
 SafeRegisterEvent("GET_ITEM_INFO_RECEIVED")
+-- Quest rows (#53): QUEST_TURNED_IN flips the status to Done the moment the
+-- quest is handed in (confirmed in-game: IsQuestFlaggedCompleted already
+-- reads true when it fires), and QUEST_DATA_LOAD_RESULT swaps the fallback
+-- name for the client's title once the quest data loads.
+SafeRegisterEvent("QUEST_TURNED_IN")
+SafeRegisterEvent("QUEST_DATA_LOAD_RESULT")
 
--- Warm the item cache at load so the first draw has real names.
+-- Warm the item and quest caches at load so the first draw has real names.
 for _, item in ipairs(ns.TRACKED_ITEMS) do
     if C_Item.RequestLoadItemDataByID then
         C_Item.RequestLoadItemDataByID(item.itemID)
+    end
+end
+for _, quest in ipairs(ns.TRACKED_QUESTS) do
+    if C_QuestLog.RequestLoadQuestByID then
+        C_QuestLog.RequestLoadQuestByID(quest.questID)
     end
 end
 
@@ -646,6 +667,12 @@ frame:SetScript("OnEvent", function(self, event, arg1)
         SetCraftOpen(false)
     elseif event == "GET_ITEM_INFO_RECEIVED" then
         if ns.TRACKED_ITEM_ID_SET[arg1] and self:IsShown() then
+            ns.UpdateDisplay()
+        end
+    elseif event == "QUEST_TURNED_IN" or event == "QUEST_DATA_LOAD_RESULT" then
+        -- Both fire for every quest, not just tracked ones; same filter as
+        -- GET_ITEM_INFO_RECEIVED above.
+        if ns.TRACKED_QUEST_ID_SET[arg1] and self:IsShown() then
             ns.UpdateDisplay()
         end
     elseif self:IsShown() then

@@ -9,7 +9,7 @@
 --    API (CreateFrame, GameTooltip, UIParent, and everything created off
 --    them). The file only ever calls methods on these and never inspects
 --    their return values, so one catch-all shape is enough for all of it.
--- 2. Configurable fakes for C_CurrencyInfo, C_Item, and C_AddOns, since those
+-- 2. Configurable fakes for C_CurrencyInfo, C_Item, C_QuestLog, and C_AddOns, since those
 --    are what CollectTracked/GetQuantityColor actually read. Tests populate
 --    these through the returned fixtures table before loading the addon.
 
@@ -33,6 +33,7 @@ function M.install()
     local currencies = {} -- [id] = { name = ..., quantity = ... }
     local currencyList = {} -- ordered list entries, as GetCurrencyListInfo returns them
     local items = {} -- [id] = { name = ..., count = ... }
+    local quests = {} -- [id] = { title = ..., completed = ... }
 
     _G.MoxieTrackerDB = {}
 
@@ -88,6 +89,20 @@ function M.install()
             return it and it.count or 0
         end,
         RequestLoadItemDataByID = function() end,
+    }
+
+    -- An unset quest reads as uncached (nil title) and not completed, the
+    -- state a weekly quest is in before the client has loaded its data.
+    _G.C_QuestLog = {
+        GetTitleForQuestID = function(id)
+            local q = quests[id]
+            return q and q.title or nil
+        end,
+        IsQuestFlaggedCompleted = function(id)
+            local q = quests[id]
+            return q ~= nil and q.completed == true
+        end,
+        RequestLoadQuestByID = function() end,
     }
 
     _G.C_AddOns = {
@@ -188,6 +203,10 @@ function M.install()
         setItem = function(id, name, count)
             items[id] = { name = name, count = count }
         end,
+        -- title nil simulates a quest whose data the client has not cached yet.
+        setQuest = function(id, title, completed)
+            quests[id] = { title = title, completed = completed }
+        end,
         -- list is an array of { id = , name = , quantity = , isHeader = , noLink = }
         setCurrencyList = function(list)
             currencyList = list
@@ -221,6 +240,7 @@ function M.install()
             currencies = {}
             currencyList = {}
             items = {}
+            quests = {}
             characterName, realmName = "TestChar", "TestRealm"
             childSkillLineID = nil
             skillLines = {}

@@ -212,6 +212,26 @@ for _, item in ipairs(ns.TRACKED_ITEMS) do
     ns.TRACKED_ITEM_ID_SET[item.itemID] = true
 end
 
+-- Weekly quests (#53), shown as a Done / Not done status rather than a count.
+-- Always listed, the same way ALWAYS_SHOWN_IDS is. Completion is read
+-- per character via C_QuestLog.IsQuestFlaggedCompleted -- confirmed in-game
+-- that IsQuestFlaggedCompletedOnAccount reads true on a character that has
+-- not done it once any alt has, which would misreport this character.
+-- `name` is only a fallback for a title the client has not cached yet.
+-- `sortAfter` is a currency ID: ns.CollectTracked sorts every row by name,
+-- which would put "Abundant Offerings" at the top, so the row is pinned
+-- directly below that currency's row instead.
+ns.TRACKED_QUESTS = {
+    { questID = 89507, name = "Abundant Offerings", sortAfter = 3376 }, -- below Shard of Dundun
+}
+
+-- Same role as TRACKED_ITEM_ID_SET: QUEST_TURNED_IN and QUEST_DATA_LOAD_RESULT
+-- fire for every quest, so the UI file's redraw filter needs this.
+ns.TRACKED_QUEST_ID_SET = {}
+for _, quest in ipairs(ns.TRACKED_QUESTS) do
+    ns.TRACKED_QUEST_ID_SET[quest.questID] = true
+end
+
 -- Fallback only, for a moxie currency added in a future patch that is not in
 -- MOXIE_IDS yet. Matching by name is locale-dependent and will not fire on a
 -- non-English client, which is precisely why the IDs above are the primary path.
@@ -312,11 +332,13 @@ end
 -- Stable identity for a row, used as the key for the show/hide setting. IDs are
 -- preferred because names are localized; the name form only ever applies to an
 -- entry that reached us through the keyword fallback with no resolvable ID.
-function ns.EntryKey(currencyID, itemID, name)
+function ns.EntryKey(currencyID, itemID, name, questID)
     if currencyID then
         return "currency:" .. currencyID
     elseif itemID then
         return "item:" .. itemID
+    elseif questID then
+        return "quest:" .. questID
     end
     return "name:" .. (name or ""):lower()
 end
