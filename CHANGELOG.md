@@ -5,7 +5,7 @@ All notable changes to MoxieTracker are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.11.0] - 2026-10-29
 
 ### Added
 - The main window now shows whether the current character has completed the Abundant Offerings weekly quest (quest 89507) this week, on its own row directly beneath Shard of Dundun (#53): green "Done" once turned in, yellow "Not done" until then. Completion is read per character with `C_QuestLog.IsQuestFlaggedCompleted` -- confirmed in-game that the account-wide `IsQuestFlaggedCompletedOnAccount` reads true on a character that has not done it once any alt has. The row updates the moment the quest is turned in, shows the quest's own tooltip on hover, and can be hidden from the options panel's General page like any other row. `/moxie debug` lists it under "tracked quests".
@@ -373,6 +373,9 @@ during load; that tag was removed and reused for this release.
 - The full GPL-3.0 text, replacing a truncated stub that named the license but
   omitted its terms.
 
+[1.11.0]: https://github.com/Tharavol/MoxieTracker/compare/v1.10.2...v1.11.0
+[1.10.2]: https://github.com/Tharavol/MoxieTracker/compare/v1.10.1...v1.10.2
+[1.10.1]: https://github.com/Tharavol/MoxieTracker/compare/v1.10.0...v1.10.1
 [1.10.0]: https://github.com/Tharavol/MoxieTracker/compare/v1.9.7...v1.10.0
 [1.9.7]: https://github.com/Tharavol/MoxieTracker/compare/v1.9.6...v1.9.7
 [1.9.6]: https://github.com/Tharavol/MoxieTracker/compare/v1.9.5...v1.9.6
