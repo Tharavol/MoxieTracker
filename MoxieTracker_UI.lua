@@ -1,6 +1,4 @@
--- Depends on MoxieTracker_Config.lua and MoxieTracker_Collect.lua, loaded
--- first per the TOC. Owns the tracker frame: creation, anchoring, dragging,
--- rendering, visibility, and the events that drive all of it.
+-- The three tracker windows: creation, anchoring, dragging, rendering, visibility and events.
 local ADDON_NAME, ns = ...
 
 local MIN_WIDTH = 240
@@ -13,10 +11,6 @@ local DEFAULT_HEIGHT = 70 -- placeholder until the first UpdateDisplay call resi
 local INDENT = "    " -- one profession row under a multi-profession character name
 local KNOWLEDGE_WINDOW_GAP = 6 -- vertical gap between the two windows
 
--- Shared shell for both windows: same backdrop, same starting size, same
--- line-pool table. Movement and dragging are wired separately below, since
--- only the main window is user-draggable -- the Knowledge Points window
--- stays anchored beneath it instead.
 local function CreateTrackerWindow(globalName)
     local window = CreateFrame("Frame", globalName, UIParent, "BackdropTemplate")
     window:SetSize(MIN_WIDTH, DEFAULT_HEIGHT)
@@ -33,31 +27,17 @@ local function CreateTrackerWindow(globalName)
 end
 
 local frame = CreateTrackerWindow("MoxieTrackerFrame")
--- Never reassigned after this, so ns.frame and the local above always share
--- the same table; other files reach it through ns, this file keeps using the
--- shorter local name throughout.
 ns.frame = frame
 
--- The Knowledge Points roster (#38) lives in its own window below the main
--- one rather than as a section within it, so a long roster does not push the
--- currency rows around.
+-- Knowledge Points roster (#38) and Concentration roster (#40) windows.
 local knowledgeFrame = CreateTrackerWindow("MoxieTrackerKnowledgeFrame")
 ns.knowledgeFrame = knowledgeFrame
 
--- Concentration roster (#40), a third window below Knowledge Points.
 local concentrationFrame = CreateTrackerWindow("MoxieTrackerConcentrationFrame")
 ns.concentrationFrame = concentrationFrame
 
--- Each window is independently draggable and stores its own position (#40 --
--- previously only `frame` was movable; Knowledge Points just rode along
--- beneath it via a fixed SetPoint). All three anchor the same way: relative
--- to the crafting frame's corner once dragged (ns.GetOffset(windowKey)
--- returns a stored or default numeric offset), falling back to a live
--- SetPoint against whatever `fallback` describes when nothing has been
--- stored yet -- for Knowledge and Concentration that fallback is "beneath
--- the window above me", which is what today's fixed stacking looked like
--- before any of this existed, and keeps tracking that window's height
--- automatically until the user actually drags it loose.
+-- Anchors used while a window has no stored offset (#40): Knowledge and
+-- Concentration stack beneath the window above them until dragged.
 local WINDOW_ANCHOR_FALLBACK = {
     main = function(window)
         window:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 20, 20)
@@ -75,13 +55,7 @@ local function ApplyWindowAnchor(window, windowKey)
     window:ClearAllPoints()
     if offsetX and offsetY then
         if ns.craftingFrame then
-            -- "left" (#47) tracks the crafting frame's TOPLEFT instead of
-            -- its TOPRIGHT, so a window resting to the frame's left holds a
-            -- constant gap regardless of how wide the frame gets on its
-            -- right/interior side -- ProfessionsFrame visibly resizes
-            -- across its own tabs (Specializations is wider than
-            -- Recipes/Crafting Orders), which a TOPRIGHT-only anchor has no
-            -- way to account for on that side.
+            -- See ns.ComputeAnchorSide (#47).
             if side == "left" then
                 window:SetPoint("TOPRIGHT", ns.craftingFrame, "TOPLEFT", offsetX, offsetY)
             else
@@ -95,32 +69,20 @@ local function ApplyWindowAnchor(window, windowKey)
     end
 end
 
--- Re-anchors all three windows. Always all three, not just the one that
--- moved: dragging Knowledge, for instance, can change where an
--- undragged Concentration should stack beneath it.
+-- Always all three: moving one can change where an undragged window below it stacks.
 function ns.ApplyAnchor()
     ApplyWindowAnchor(frame, "main")
     ApplyWindowAnchor(knowledgeFrame, "knowledge")
     ApplyWindowAnchor(concentrationFrame, "concentration")
 end
 
--- The scale division in SaveOffsetFromAnchor below is exact only when
--- frameScale and anchorScale match, and otherwise leaves a trailing remainder
--- like 3.9999999999994 that would show up verbatim in the options panel's
--- offset fields and /moxie debug. A local helper rather than the WoW global
--- Round(), so this stays a plain math operation the same in-game and in tests.
+-- The scale division below leaves remainders like 3.9999999999994 when scales differ.
 local function RoundToPixel(value)
     return math.floor(value + 0.5)
 end
 
--- After a free drag `window` is anchored to wherever it was dropped, so
--- convert that screen position back into an offset from the crafting window
--- and store it under `windowKey`. Which of the window's/frame's edges feed
--- that conversion depends on ns.ComputeAnchorSide's verdict (#47): a
--- "left"-docked window's offset is measured from its own right edge to the
--- crafting frame's left edge (matching the TOPRIGHT->TOPLEFT anchor
--- ApplyWindowAnchor uses for that side), not its left edge to the frame's
--- right the way every offset was measured before "left" existed.
+-- Converts a dropped window's screen position into an offset from the crafting
+-- frame. A "left"-docked window (#47) measures from its right edge to the frame's left.
 local function SaveOffsetFromAnchor(window, windowKey)
     if not ns.craftingFrame then
         return
@@ -150,10 +112,6 @@ local function MakeWindowDraggable(window, windowKey)
     window:RegisterForDrag("LeftButton")
     window:SetMovable(true)
     window.movable = true
-    -- EnsureLine's per-row drag handlers below need this to save/reapply
-    -- too: dragging by a row (StartMoving on `owner`), not the window's own
-    -- backdrop, is the only way to move Knowledge/Concentration in
-    -- practice, since their rows cover almost the entire window.
     window.windowKey = windowKey
     window:SetScript("OnDragStart", function(self)
         self:StartMoving()
@@ -185,9 +143,6 @@ concentrationFrame.title:SetPoint("TOPLEFT", concentrationFrame, "TOPLEFT", 8, -
 concentrationFrame.title:SetText("Concentration")
 
 -- Each line is a Frame, not a FontString: only Frames support OnEnter/OnLeave.
--- Shared by all three windows; `owner` is whichever one the line belongs to,
--- so a line always resizes/hovers/drags its own window rather than always
--- reaching for the module-level `frame`.
 local function EnsureLine(owner, index)
     local line = owner.lines[index]
     if not line then
@@ -196,15 +151,7 @@ local function EnsureLine(owner, index)
         line:SetPoint("RIGHT", owner, "RIGHT", -PADDING, 0)
         line:SetHeight(LINE_HEIGHT)
 
-        -- Every window is independently movable now (#40), so every
-        -- window's rows drag it, same as the main window always has. A
-        -- drag started on a row still has to save and reapply the offset
-        -- on release the same way the window-level OnDragStop does
-        -- (MakeWindowDraggable above) -- without this, a row-dragged
-        -- window (in practice the only way to drag Knowledge/Concentration
-        -- at all, since their rows cover almost the whole window) visually
-        -- moves while held but snaps right back on the next redraw, because
-        -- nothing was ever saved to MoxieTrackerDB.
+        -- Rows cover most of a window, so they drag it too and must save the offset.
         if owner.movable then
             line:EnableMouse(true)
             line:RegisterForDrag("LeftButton")
@@ -254,9 +201,7 @@ function ns.UpdateDisplay()
         frame.lines[index]:Hide()
     end
 
-    -- Width is driven by the widest rendered row so long names such as
-    -- "Artisan Leatherworker's Moxie" are not clipped. Colour escapes do not
-    -- contribute to GetStringWidth, so this measures the visible text.
+    -- Width follows the widest row; colour escapes do not count toward GetStringWidth.
     local widest = 0
     local lineIndex = 0
 
@@ -272,9 +217,7 @@ function ns.UpdateDisplay()
     end
 
     if #tracked == 0 then
-        -- Distinguish "nothing to show" from "you hid everything", which would
-        -- otherwise look identical to the addon having broken.
-        local everythingHidden = MoxieTrackerDB.hidden ~= nil and next(MoxieTrackerDB.hidden) ~= nil
+        local everythingHidden = next(MoxieTrackerDB.hidden) ~= nil
         RenderLine(everythingHidden and "All rows hidden - /moxie options" or "No tracked currencies")
     else
         for _, entry in ipairs(tracked) do
@@ -292,16 +235,8 @@ function ns.UpdateDisplay()
     frame:SetHeight(math.max(EMPTY_HEIGHT, BASE_HEIGHT + (lineIndex * LINE_HEIGHT)))
 end
 
--- Knowledge Points roster (#38), in its own window (see knowledgeFrame above)
--- rather than a section of the main one. Grows as more alts log in; muted
--- characters (options panel) never appear here. A character with nothing
--- unspent is dropped entirely rather than shown at 0, and the whole window
--- hides itself when that leaves nothing to show, the same "distinguish
--- nothing-to-show from broken" concern as the main window, just resolved by
--- hiding rather than a fallback line since there's no user action (like
--- unhiding a row) that would fix an empty roster. MoxieTrackerDB.hideKnowledgeWindow
--- is a separate, blunter off switch (options panel) for hiding the whole
--- window regardless of content.
+-- Knowledge Points roster (#38). Characters with nothing unspent are left out, and
+-- the window hides when nothing remains.
 function ns.UpdateKnowledgeDisplay()
     if MoxieTrackerDB.hideKnowledgeWindow then
         knowledgeFrame:Hide()
@@ -329,23 +264,12 @@ function ns.UpdateKnowledgeDisplay()
 
     for _, entry in ipairs(roster) do
         if entry.points > 0 then
-            -- Name on its own line, then one indented row per profession
-            -- with unspent points -- always broken out this way, even for a
-            -- character with only one, so the count is never ambiguous
-            -- between "N total" and "N in this profession". Only a
-            -- pre-breakdown legacy entry (see ns.CollectKnowledgeRoster)
-            -- falls back to a plain "Name: total" line, since it has no
-            -- breakdown to show.
+            -- Name, then one indented row per profession; a legacy entry with no
+            -- breakdown gets a single "Name: total" line.
             if entry.professions then
                 RenderLine(string.format("%s%s|r", ns.WHITE, entry.name))
                 for _, profession in ipairs(entry.professions) do
-                    -- A stored entry can now include a trained profession
-                    -- sitting at 0 points (#42 follow-up: SnapshotKnowledge
-                    -- persists every trained profession, not just ones with
-                    -- unspent points, so the options panel can offer muting
-                    -- one before it has earned anything). Filtered back out
-                    -- here so the floating window's own "don't show what
-                    -- isn't there" behavior is unchanged.
+                    -- Stored entries include professions at 0 (#42).
                     if profession.points > 0 then
                         RenderLine(string.format("%s%s%s|r: %s%d|r",
                             INDENT, ns.WHITE, profession.name, ns.GREEN, profession.points))
@@ -367,15 +291,8 @@ function ns.UpdateKnowledgeDisplay()
     knowledgeFrame:Show()
 end
 
--- Concentration roster (#40), the same "own window below the previous one,
--- name in white with an indented per-profession breakdown in green"
--- treatment as Knowledge Points (ns.UpdateKnowledgeDisplay above), plus a
--- quantity/max reading and a projected time-to-cap per profession. Unlike
--- Knowledge, a profession at 0 still renders -- 0 Concentration is real
--- information here, not "nothing to report" -- so the only professions
--- left out are ones never discovered/muted (see
--- ns.CollectConcentrationRoster). MoxieTrackerDB.hideConcentrationWindow
--- mirrors hideKnowledgeWindow's blunt off switch.
+-- Concentration roster (#40), with a projected time to cap. Unlike Knowledge, a
+-- profession at 0 still renders.
 function ns.UpdateConcentrationDisplay()
     if MoxieTrackerDB.hideConcentrationWindow then
         concentrationFrame:Hide()
@@ -443,24 +360,12 @@ frame:SetScript("OnLeave", function()
     GameTooltip:Hide()
 end)
 
--- Visibility is driven by the crafting window. `pinned` is an override so the
--- panel can be inspected without a profession open.
+-- Visibility follows the crafting window; `pinned` keeps it shown regardless.
 frame.craftOpen = false
 frame.pinned = false
 
--- Concentration ID discovery (#40) plus a redraw of all three windows.
--- Discovery has to be attempted here -- the function nearly every relevant
--- event routes through while the window is open (currency changes,
--- PLAYER_ENTERING_WORLD, RefreshVisibility below) -- rather than only once
--- when the crafting window first opens: GetProfessionChildSkillLineID() is
--- not guaranteed ready the instant the window shows (the profession UI
--- populates its recipe list asynchronously), so a single attempt on open
--- could silently miss it for the rest of that session. Retrying here on
--- every redraw makes it self-healing instead: it just succeeds on the next
--- one. (A previous version only attempted discovery from RefreshVisibility,
--- which most gameplay events never call -- only /moxie reset position and
--- similar did, which is why the Concentration window only ever appeared
--- after using Reset.)
+-- Concentration ID discovery (#40) is retried on every redraw:
+-- GetProfessionChildSkillLineID() is not always ready when the crafting window opens.
 local function RefreshAllWindows()
     if ns.DiscoverConcentrationCurrencyID() then
         ns.SnapshotConcentration()
@@ -471,23 +376,9 @@ local function RefreshAllWindows()
     ns.RefreshConcentrationTicker()
 end
 
--- Blizzard's default full-window panels (Mail, Bags, Professions, ...) all
--- set the XML `toplevel="true"` flag, which makes a panel re-raise its own
--- FrameLevel above every sibling *in its stratum* on every mouse click, not
--- just when it's shown (confirmed live: with Professions and Mail both
--- freshly queried at FrameLevel 1 in the same MEDIUM stratum, Mail still drew
--- on top after being clicked into). Matching the crafting frame's level, even
--- re-synced on every show (as this used to do), can never reliably win that
--- fight -- Mail can out-click Professions at any moment, with no event this
--- addon could react to in time (#52 again, first "fix" included below this
--- comment in git history did not actually hold up in-game).
---
--- FrameStrata beats FrameLevel unconditionally, regardless of anyone's
--- click-raising within a lower stratum. Sitting one whole stratum above
--- whatever the crafting frame currently uses -- rather than matching it --
--- guarantees these three windows stay on top of it and of every other
--- default panel at that same (or lower) stratum, permanently, with no
--- ongoing resync needed to keep winning.
+-- Default panels (Mail, Bags, Professions) are `toplevel` and re-raise their
+-- FrameLevel on every click, so matching the crafting frame's level loses (#52).
+-- The windows sit one FrameStrata above it instead, which always wins.
 local STRATA_ORDER = {
     "BACKGROUND", "LOW", "MEDIUM", "HIGH", "DIALOG", "FULLSCREEN", "FULLSCREEN_DIALOG", "TOOLTIP",
 }
@@ -518,8 +409,7 @@ function ns.RefreshVisibility()
         SyncWindowLevels()
         ns.ApplyAnchor()
         frame:Show()
-        -- Both show or hide themselves based on whether there's anything to
-        -- display; see ns.UpdateKnowledgeDisplay/ns.UpdateConcentrationDisplay.
+        -- The roster windows show or hide themselves depending on content.
         RefreshAllWindows()
     else
         frame:Hide()
@@ -534,16 +424,14 @@ local function SetCraftOpen(isOpen)
     ns.RefreshVisibility()
 end
 
--- Resets one window's stored position back to its default/fallback anchor.
--- Shared by the options panel's per-window "Reset position" buttons.
+-- Per-window "Reset" button on the options panel.
 function ns.ResetWindowPosition(windowKey)
     ns.ClearOffset(windowKey)
     ns.ApplyAnchor()
     ns.RefreshVisibility()
 end
 
--- Resets all three windows. Shared by /moxie reset position and (for
--- backward-compatible bulk reset) available to the options panel too.
+-- /moxie reset position.
 function ns.ResetPosition()
     ns.ClearOffset("main")
     ns.ClearOffset("knowledge")
@@ -554,19 +442,14 @@ end
 
 local concentrationTicker
 
--- The current character's Concentration keeps regenerating in real time,
--- unlike every other tracked value in this addon, which only changes on a
--- discrete game event -- nothing else needed a clock-driven refresh before
--- this (#40). Runs only while the Concentration window is actually shown,
--- so an idle session with the crafting window closed costs nothing. Guards
--- around C_Timer's existence the same defensive way SafeRegisterEvent does
--- below, since the headless test harness has no C_Timer to stub.
+-- Concentration regenerates with no event (#40), so the window redraws once a
+-- minute while it is shown.
 function ns.RefreshConcentrationTicker()
     if concentrationTicker then
         concentrationTicker:Cancel()
         concentrationTicker = nil
     end
-    if not concentrationFrame:IsShown() or not C_Timer or not C_Timer.NewTicker then
+    if not concentrationFrame:IsShown() then
         return
     end
     concentrationTicker = C_Timer.NewTicker(60, function()
@@ -576,55 +459,36 @@ function ns.RefreshConcentrationTicker()
     end)
 end
 
--- Registering an event the client does not know about raises an error, which
--- would abort the rest of this file. Register optional events defensively.
-local function SafeRegisterEvent(event)
-    pcall(frame.RegisterEvent, frame, event)
-end
+frame:RegisterEvent("CURRENCY_DISPLAY_UPDATE")
+frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+frame:RegisterEvent("PLAYER_LOGIN")
+frame:RegisterEvent("PLAYER_LOGOUT")
+frame:RegisterEvent("CURRENCY_TRANSFER_LOG_UPDATE")
+frame:RegisterEvent("TRADE_SKILL_SHOW")
+frame:RegisterEvent("TRADE_SKILL_CLOSE")
+frame:RegisterEvent("ADDON_LOADED")
+-- Item counts change on bag updates, not currency events; GET_ITEM_INFO_RECEIVED
+-- replaces the fallback name once the item is cached.
+frame:RegisterEvent("BAG_UPDATE_DELAYED")
+frame:RegisterEvent("GET_ITEM_INFO_RECEIVED")
+-- Quest rows (#53): IsQuestFlaggedCompleted already reads true when QUEST_TURNED_IN
+-- fires; QUEST_DATA_LOAD_RESULT replaces the fallback title.
+frame:RegisterEvent("QUEST_TURNED_IN")
+frame:RegisterEvent("QUEST_DATA_LOAD_RESULT")
 
-SafeRegisterEvent("CURRENCY_DISPLAY_UPDATE")
-SafeRegisterEvent("PLAYER_ENTERING_WORLD")
-SafeRegisterEvent("PLAYER_LOGIN")
-SafeRegisterEvent("PLAYER_LOGOUT")
-SafeRegisterEvent("CURRENCY_TRANSFER_LOG_UPDATE")
-SafeRegisterEvent("TRADE_SKILL_SHOW")
-SafeRegisterEvent("TRADE_SKILL_CLOSE")
-SafeRegisterEvent("ADDON_LOADED")
--- Item rows are counted from the bags, so they move on bag changes rather than
--- on the currency events. GET_ITEM_INFO_RECEIVED redraws the row once the
--- client has cached the item and its real name replaces the fallback.
-SafeRegisterEvent("BAG_UPDATE_DELAYED")
-SafeRegisterEvent("GET_ITEM_INFO_RECEIVED")
--- Quest rows (#53): QUEST_TURNED_IN flips the status to Done the moment the
--- quest is handed in (confirmed in-game: IsQuestFlaggedCompleted already
--- reads true when it fires), and QUEST_DATA_LOAD_RESULT swaps the fallback
--- name for the client's title once the quest data loads.
-SafeRegisterEvent("QUEST_TURNED_IN")
-SafeRegisterEvent("QUEST_DATA_LOAD_RESULT")
-
--- Warm the item and quest caches at load so the first draw has real names.
+-- Warm the item and quest caches so the first draw has real names.
 for _, item in ipairs(ns.TRACKED_ITEMS) do
-    if C_Item.RequestLoadItemDataByID then
-        C_Item.RequestLoadItemDataByID(item.itemID)
-    end
+    C_Item.RequestLoadItemDataByID(item.itemID)
 end
 for _, quest in ipairs(ns.TRACKED_QUESTS) do
-    if C_QuestLog.RequestLoadQuestByID then
-        C_QuestLog.RequestLoadQuestByID(quest.questID)
-    end
+    C_QuestLog.RequestLoadQuestByID(quest.questID)
 end
 
--- Currency events (CURRENCY_DISPLAY_UPDATE etc.) cover the tracked
--- currencies, the Knowledge currencies, and Concentration, so any handler
--- below that reacts to one refreshes all three windows (via
--- RefreshAllWindows, defined above ns.RefreshVisibility) rather than
--- risking one going stale.
+-- Any other registered event (the currency events) redraws all three windows.
 frame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" then
         if arg1 == ADDON_NAME then
-            MoxieTrackerDB = MoxieTrackerDB or {}
-            -- One-time upgrade from the pre-#40 single-offset SavedVariables
-            -- shape; a no-op once already migrated.
+            ns.InitSavedVariables()
             ns.MigrateWindowOffset()
         end
     elseif event == "PLAYER_LOGIN" then
@@ -632,36 +496,17 @@ frame:SetScript("OnEvent", function(self, event, arg1)
             ns.Print("%s loaded. Type /moxie for options.", ns.GetVersion())
         end
     elseif event == "PLAYER_ENTERING_WORLD" then
-        -- Unconditional, unlike the tracker-window refresh below: warms
-        -- ns.IsProfessionLearned's per-character cache while the profession
-        -- API is confirmed live, regardless of whether any tracker window
-        -- is currently shown (RefreshAllWindows, and every other caller of
-        -- ns.IsProfessionLearned, only runs while one is). Confirmed
-        -- empirically that the same API goes dark by PLAYER_LOGOUT -- see
-        -- the comment above ns.IsProfessionLearned in the Collect file --
-        -- so this is this session's only guaranteed chance to populate the
-        -- cache before SnapshotConcentration needs it at logout.
+        -- Unconditional: the profession API is dark by PLAYER_LOGOUT (see ns.IsProfessionLearned).
         ns.WarmLearnedProfessionsCache()
         if self:IsShown() then
             RefreshAllWindows()
         end
     elseif event == "PLAYER_LOGOUT" then
-        -- The whole "accumulation" mechanism (#38, extended to Concentration
-        -- by #40): snapshot this character's unspent Knowledge and known
-        -- Concentration into the account-wide rosters as it leaves, so an
-        -- alt sees them next. Deliberately not PLAYER_ENTERING_WORLD: currency
-        -- data isn't guaranteed synced from the server the instant that event
-        -- fires (most notably right after login), and reading it that early
-        -- could persist a spurious 0 that clobbers the real total until the
-        -- next snapshot. By logout the session's currency data has settled,
-        -- and logout always happens before another character could see the
-        -- roster anyway.
+        -- Roster snapshots (#38, #40). Not at PLAYER_ENTERING_WORLD: currency data may
+        -- not be synced yet then and could persist a spurious 0.
         ns.SnapshotKnowledge()
         ns.SnapshotConcentration()
     elseif event == "TRADE_SKILL_SHOW" then
-        -- Concentration ID discovery (#40) happens inside
-        -- ns.RefreshVisibility, which SetCraftOpen(true) below triggers --
-        -- see the comment there for why it lives there instead of only here.
         SetCraftOpen(true)
     elseif event == "TRADE_SKILL_CLOSE" then
         SetCraftOpen(false)
@@ -670,8 +515,6 @@ frame:SetScript("OnEvent", function(self, event, arg1)
             ns.UpdateDisplay()
         end
     elseif event == "QUEST_TURNED_IN" or event == "QUEST_DATA_LOAD_RESULT" then
-        -- Both fire for every quest, not just tracked ones; same filter as
-        -- GET_ITEM_INFO_RECEIVED above.
         if ns.TRACKED_QUEST_ID_SET[arg1] and self:IsShown() then
             ns.UpdateDisplay()
         end
@@ -691,13 +534,7 @@ local function HookCraftingFrame(globalName)
     target.moxieTrackerHooked = true
     ns.craftingFrame = target
 
-    -- UIParent's default MEDIUM strata draws below the crafting window and the
-    -- addon panes docked to it, so an overlapping panel would hide behind them.
-    -- Match the crafting frame's strata and sit above it. See SyncWindowLevels
-    -- above for why this alone (a one-time snapshot) isn't enough on its own --
-    -- RefreshVisibility calls it again on every show, this call just gets the
-    -- windows onto the right strata/level immediately rather than waiting for
-    -- the first one.
+    -- RefreshVisibility resyncs on every show; this covers the time until then.
     SyncWindowLevels()
 
     target:HookScript("OnShow", function()
@@ -708,16 +545,8 @@ local function HookCraftingFrame(globalName)
     end)
 end
 
-if EventUtil and EventUtil.ContinueOnAddOnLoaded then
-    EventUtil.ContinueOnAddOnLoaded("Blizzard_Professions", function()
-        HookCraftingFrame("ProfessionsFrame")
-    end)
-else
-    frame:HookScript("OnEvent", function(_, event, loadedAddon)
-        if event == "ADDON_LOADED" and loadedAddon == "Blizzard_Professions" then
-            HookCraftingFrame("ProfessionsFrame")
-        end
-    end)
-end
+EventUtil.ContinueOnAddOnLoaded("Blizzard_Professions", function()
+    HookCraftingFrame("ProfessionsFrame")
+end)
 
 ns.RefreshVisibility()

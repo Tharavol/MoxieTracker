@@ -1,19 +1,9 @@
--- Depends on MoxieTracker_Config.lua, MoxieTracker_Collect.lua, and
--- MoxieTracker_UI.lua, loaded first per the TOC. Three Settings pages (#41):
--- General (the top-level category), plus Thresholds and Muting as
--- subcategories -- previously one long scrolling page holding all of it.
+-- Settings pages (#41): General is the top-level category, the rest are subcategories.
 
 local _, ns = ...
 
--- Each page gets its own scroll region -- see the comment above
--- OPTIONS_ROW_HEIGHT in the original single-page version (still true here,
--- just applied three times instead of once): a canvas settings
--- category/subcategory is not guaranteed to stretch the frame it's given to
--- fill the available area, and does not clip or scroll on its own, so any
--- content taller than the fixed canvas region draws past the bottom of the
--- window instead of scrolling. A UIPanelScrollFrameTemplate inside that
--- region, sized with an explicit SetSize (not anchored to the panel's own
--- edges, which read 0 in-game), fixes that regardless of a page's content.
+-- A canvas category does not clip or scroll its content, so each page holds a
+-- UIPanelScrollFrameTemplate sized explicitly (the panel's own edges read 0 in-game).
 local OPTIONS_ROW_HEIGHT = 26
 local OPTIONS_HEADER_HEIGHT = 20
 local OPTIONS_SECTION_GAP = 6
@@ -21,8 +11,7 @@ local OPTIONS_CONTENT_WIDTH = 500
 local OPTIONS_CONTENT_HEIGHT = 460
 local OPTIONS_BOTTOM_MARGIN = 16
 
--- The three independently positioned tracker windows (#40), in the order
--- their compact Position rows render on the General page.
+-- The three tracker windows (#40), in General-page Position row order.
 local WINDOWS = {
     { key = "main", label = "Main" },
     { key = "knowledge", label = "Knowledge" },
@@ -32,12 +21,17 @@ local WINDOWS = {
 local generalCategory
 
 --------------------------------------------------------------------------
--- Shared helpers, used by more than one page.
+-- Shared helpers.
 --------------------------------------------------------------------------
 
--- Builds a "Label:  [box]" row for a settings section. Callers wire up
--- validation and commit handlers per field, since signed offsets and
--- non-negative thresholds validate differently.
+-- Redraws a window only while the tracker is shown (#50).
+local function IfShown(update)
+    if ns.frame:IsShown() then
+        update()
+    end
+end
+
+-- "Label:  [box]" row. Callers wire up validation and commit handlers.
 local function CreateSettingField(parent, y, labelText)
     local label = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     label:SetPoint("TOPLEFT", parent, "TOPLEFT", 16, y)
@@ -51,12 +45,19 @@ local function CreateSettingField(parent, y, labelText)
     return editBox
 end
 
--- Shared shape for every row list across all three pages: a checkbox plus
--- label, parented to the given page's scroll content and positioned
--- explicitly by the caller (a list's start Y depends on how tall the list
--- above it turned out to be, so position can't be baked in here the way a
--- single fixed-origin list could). Takes `panel` explicitly now that there
--- are three separate panel tables instead of one shared ns.optionsPanel.
+-- Checkbox plus label at a fixed row.
+local function CreateCheckbox(parent, globalName, y, labelText, onClick)
+    local checkbox = CreateFrame("CheckButton", globalName, parent, "UICheckButtonTemplate")
+    checkbox:SetSize(24, 24)
+    checkbox:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, y)
+    checkbox.label = checkbox:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    checkbox.label:SetPoint("LEFT", checkbox, "RIGHT", 4, 0)
+    checkbox.label:SetText(labelText)
+    checkbox:SetScript("OnClick", onClick)
+    return checkbox
+end
+
+-- Pooled checkbox row for a list; positioned by the caller.
 local function EnsureListRow(panel, pool, index, frameNamePrefix, onClick)
     local row = pool[index]
     if not row then
@@ -75,9 +76,41 @@ local function PositionRow(panel, row, y)
     row:SetPoint("TOPLEFT", panel.content, "TOPLEFT", 0, y)
 end
 
--- Builds one window's compact Position row: "Label  [X]  [Y]  [Reset]" all
--- on one line (#40). Lives here rather than under the General-page section
--- below since nothing else about it is General-specific.
+-- Shows one pooled checkbox row per entry from startY down; `bind` fills a row
+-- from its entry. Returns the list's bottom Y, reserving one row when empty.
+local function RenderCheckRows(panel, pool, frameNamePrefix, onClick, entries, startY, bind)
+    for _, row in ipairs(pool) do
+        row:Hide()
+    end
+    for index, entry in ipairs(entries) do
+        local row = EnsureListRow(panel, pool, index, frameNamePrefix, onClick)
+        bind(row, entry)
+        PositionRow(panel, row, startY - ((index - 1) * OPTIONS_ROW_HEIGHT))
+        row:Show()
+    end
+    return startY - (math.max(#entries, 1) * OPTIONS_ROW_HEIGHT)
+end
+
+-- Shows the page's "nothing here" text at `y` when the list is empty.
+local function UpdateEmptyText(panel, isEmpty, y)
+    if isEmpty then
+        panel.empty:ClearAllPoints()
+        panel.empty:SetPoint("TOPLEFT", panel.content, "TOPLEFT", 0, y)
+        panel.empty:Show()
+    else
+        panel.empty:Hide()
+    end
+end
+
+-- Sizes the scroll child to the content. Floored at 1: a zero-height scroll child
+-- is not scrollable. UpdateScrollChildRect is needed because a ScrollFrame does not
+-- reliably recompute its range when the child is resized.
+local function SetContentBottom(panel, bottomY)
+    panel.content:SetHeight(math.max(1, -bottomY + OPTIONS_BOTTOM_MARGIN))
+    panel.scrollFrame:UpdateScrollChildRect()
+end
+
+-- One window's "Label  [X]  [Y]  [Reset]" row (#40).
 local function CreatePositionRow(parent, y, window)
     local label = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     label:SetPoint("TOPLEFT", parent, "TOPLEFT", 16, y)
@@ -100,19 +133,9 @@ local function CreatePositionRow(parent, y, window)
     resetButton:SetPoint("LEFT", yEditBox, "RIGHT", 12, 0)
     resetButton:SetText("Reset")
 
-    -- Offsets are signed (the default vertical offset is -440), so these are
-    -- plain EditBoxes with manual tonumber() validation rather than
-    -- SetNumeric(true), which does not allow a minus sign.
-    --
-    -- The two fields commit together (a half-valid pair would anchor the
-    -- window off just one bad entry), but that must not mean "clear
-    -- whatever's typed the moment the OTHER box is merely still empty" --
-    -- Knowledge/Concentration start with BOTH boxes blank (no default
-    -- offset until first dragged, see ns.GetOffset), so filling in just X
-    -- and tabbing to Y used to immediately wipe X back to blank as soon as
-    -- that tab/Enter/focus-loss fired CommitOffset with Y still empty. A
-    -- box is only reverted when it holds text that fails to parse -- an
-    -- empty box waiting on its pair is left alone, not treated as invalid.
+    -- Offsets are signed, so no SetNumeric (it rejects a minus sign). The pair
+    -- commits together; an empty box waiting on its pair is left alone, and only
+    -- text that fails to parse is reverted.
     local function CommitOffset()
         local xText, yText = xEditBox:GetText(), yEditBox:GetText()
         local newX = xText ~= "" and tonumber(xText) or nil
@@ -144,9 +167,7 @@ local function CreatePositionRow(parent, y, window)
         box:SetScript("OnEditFocusLost", CommitOffset)
     end
 
-    -- Tab/shift-tab moves between X and Y within the row, rather than
-    -- leaving the box (WoW's EditBox does not chain focus between sibling
-    -- boxes on its own).
+    -- EditBoxes do not chain focus between siblings on their own.
     xEditBox:SetScript("OnTabPressed", function(self)
         if IsShiftKeyDown() then
             self:ClearFocus()
@@ -172,10 +193,7 @@ local function CreatePositionRow(parent, y, window)
     return { xEditBox = xEditBox, yEditBox = yEditBox }
 end
 
--- Builds a page's title + scroll region, shared boilerplate across all
--- three panels. `titleText` is the page's own heading (not necessarily the
--- addon name -- only the top-level General page uses that); `subtitleText`
--- is a short one-line description shown beneath it.
+-- Title, subtitle and scroll region shared by every page.
 local function CreatePanelShell(globalName, titleText, subtitleText)
     local panel = CreateFrame("Frame", globalName, UIParent)
     panel.name = titleText
@@ -195,14 +213,8 @@ local function CreatePanelShell(globalName, titleText, subtitleText)
     scrollFrame:SetSize(OPTIONS_CONTENT_WIDTH, OPTIONS_CONTENT_HEIGHT)
     panel.scrollFrame = scrollFrame
 
-    -- No SetPoint calls here: a ScrollFrame manages its scroll child's
-    -- anchoring internally once SetScrollChild is called. Manually anchoring
-    -- the child first fights that internal positioning and loses --
-    -- confirmed in-game via GetLeft()/GetTop() both reading nil on the
-    -- scroll child and everything anchored to it, despite each frame
-    -- otherwise reporting a normal size and Show/IsVisible state. An
-    -- explicit SetSize before SetScrollChild is the correct, sufficient way
-    -- to give the child a shape; the scroll frame positions it from there.
+    -- No SetPoint on the scroll child: anchoring it manually fights SetScrollChild
+    -- (GetLeft/GetTop read nil in-game). SetSize before SetScrollChild is enough.
     local content = CreateFrame("Frame", nil, scrollFrame)
     content:SetSize(OPTIONS_CONTENT_WIDTH, 1)
     scrollFrame:SetScrollChild(content)
@@ -213,8 +225,7 @@ local function CreatePanelShell(globalName, titleText, subtitleText)
 end
 
 --------------------------------------------------------------------------
--- General page (top-level category): login/window-visibility checkboxes,
--- the three-window Position section, and the tracked-currency list.
+-- General page: visibility checkboxes, window positions, tracked-row list.
 --------------------------------------------------------------------------
 
 local OPTIONS_LOGIN_ROW_Y = 0
@@ -222,25 +233,23 @@ local OPTIONS_MOXIE_ROW_Y = OPTIONS_LOGIN_ROW_Y - OPTIONS_ROW_HEIGHT
 local OPTIONS_KNOWLEDGE_WINDOW_ROW_Y = OPTIONS_MOXIE_ROW_Y - OPTIONS_ROW_HEIGHT
 local OPTIONS_CONCENTRATION_WINDOW_ROW_Y = OPTIONS_KNOWLEDGE_WINDOW_ROW_Y - OPTIONS_ROW_HEIGHT
 
--- Position section: a header (sharing its row with the X/Y column labels)
--- plus one compact "Label [X] [Y] [Reset]" row per window.
+-- Position header (sharing its row with the X/Y column labels), then one row per window.
 local OPTIONS_POSITION_HEADER_Y = OPTIONS_CONCENTRATION_WINDOW_ROW_Y - OPTIONS_ROW_HEIGHT
 local OPTIONS_POSITION_MAIN_ROW_Y = OPTIONS_POSITION_HEADER_Y - OPTIONS_HEADER_HEIGHT
 local OPTIONS_POSITION_KNOWLEDGE_ROW_Y = OPTIONS_POSITION_MAIN_ROW_Y - OPTIONS_ROW_HEIGHT
 local OPTIONS_POSITION_CONCENTRATION_ROW_Y = OPTIONS_POSITION_KNOWLEDGE_ROW_Y - OPTIONS_ROW_HEIGHT
 
--- The tracked-currency list's row count is only known at refresh time, so
--- its start is the last fixed constant on this page -- it anchors to the
--- bottom of whatever rendered above it.
 local OPTIONS_FIRST_ROW_Y = OPTIONS_POSITION_CONCENTRATION_ROW_Y - OPTIONS_ROW_HEIGHT - OPTIONS_SECTION_GAP
 
-local function EnsureOptionRow(panel, index)
-    return EnsureListRow(panel, panel.rows, index, "MoxieTrackerOption", function(self)
-        ns.SetHidden(self.entryKey, not self:GetChecked())
-        if ns.frame:IsShown() then
-            ns.UpdateDisplay()
-        end
-    end)
+local function OnTrackedRowClick(self)
+    ns.SetHidden(self.entryKey, not self:GetChecked())
+    IfShown(ns.UpdateDisplay)
+end
+
+local function BindEntryRow(row, entry)
+    row.entryKey = entry.key
+    row.label:SetText(entry.name)
+    row:SetChecked(not entry.hidden)
 end
 
 function ns.RefreshGeneralOptions()
@@ -258,63 +267,21 @@ function ns.RefreshGeneralOptions()
     end
 
     local tracked = ns.CollectTracked(true, true)
-
-    for _, row in ipairs(panel.rows) do
-        row:Hide()
-    end
-
-    for index, entry in ipairs(tracked) do
-        local row = EnsureOptionRow(panel, index)
-        row.entryKey = entry.key
-        row.label:SetText(entry.name)
-        row:SetChecked(not entry.hidden)
-        PositionRow(panel, row, OPTIONS_FIRST_ROW_Y - ((index - 1) * OPTIONS_ROW_HEIGHT))
-        row:Show()
-    end
-
-    if #tracked == 0 then
-        panel.empty:ClearAllPoints()
-        panel.empty:SetPoint("TOPLEFT", panel.content, "TOPLEFT", 0, OPTIONS_FIRST_ROW_Y)
-        panel.empty:Show()
-    else
-        panel.empty:Hide()
-    end
-
-    local trackedRowCount = math.max(#tracked, 1) -- reserve one row of space for the "nothing to configure" message
-    local trackedListBottomY = OPTIONS_FIRST_ROW_Y - (trackedRowCount * OPTIONS_ROW_HEIGHT)
-
-    -- Content height drives whether the scroll frame's bar is usable at all;
-    -- floored at 1 rather than 0, since a zero-height scroll child is what
-    -- some client versions treat as "not scrollable" even once rows appear.
-    panel.content:SetHeight(math.max(1, -trackedListBottomY + OPTIONS_BOTTOM_MARGIN))
-
-    -- A ScrollFrame does not reliably recompute its scroll range on its own
-    -- when its scroll child is resized after creation; without this, rows
-    -- added after the initial (1px) scroll child height can end up outside
-    -- the range the scroll frame thinks is scrollable and never draw.
-    panel.scrollFrame:UpdateScrollChildRect()
+    local bottomY = RenderCheckRows(panel, panel.rows, "MoxieTrackerOption", OnTrackedRowClick,
+        tracked, OPTIONS_FIRST_ROW_Y, BindEntryRow)
+    UpdateEmptyText(panel, #tracked == 0, OPTIONS_FIRST_ROW_Y)
+    SetContentBottom(panel, bottomY)
 end
 
--- Called from MoxieTracker_UI.lua's drag-stop handlers after a window is
--- dropped, so an already-open General page reflects the new position right
--- away. ns.RefreshGeneralOptions only runs on the page's OnShow, which does
--- not fire again just because a window moved while Settings stayed open --
--- the symptom this exists to fix: drag a window with Settings open, and its
--- X/Y boxes sat stale until the panel was closed and reopened. Updates just
--- the two boxes for that window rather than calling ns.RefreshGeneralOptions,
--- which would also reset the page's scroll position back to the top on
--- every drag. Skips a box that currently has keyboard focus, so a drag on
--- one window cannot stomp text the user is mid-typing into another
--- window's row.
+-- Called after a window is dragged, so an open General page shows the new position
+-- without a full refresh (which would reset the scroll position). A box with
+-- keyboard focus is left alone.
 function ns.RefreshPositionField(windowKey)
     local panel = ns.generalPanel
-    if not panel or not panel:IsShown() then
+    if not panel:IsShown() then
         return
     end
     local fields = panel.positionFields[windowKey]
-    if not fields then
-        return
-    end
     local x, y = ns.GetOffset(windowKey)
     if not fields.xEditBox:HasFocus() then
         fields.xEditBox:SetText(x and tostring(x) or "")
@@ -332,79 +299,37 @@ local function CreateGeneralPanel()
 
     local content = panel.content
 
-    local loginCheckbox = CreateFrame("CheckButton", "MoxieTrackerLoginMessageOption", content, "UICheckButtonTemplate")
-    loginCheckbox:SetSize(24, 24)
-    loginCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", 0, OPTIONS_LOGIN_ROW_Y)
-    loginCheckbox.label = loginCheckbox:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    loginCheckbox.label:SetPoint("LEFT", loginCheckbox, "RIGHT", 4, 0)
-    loginCheckbox.label:SetText("Show version message at login")
-    loginCheckbox:SetScript("OnClick", function(self)
-        MoxieTrackerDB.suppressLoginMessage = not self:GetChecked()
-    end)
-    panel.loginCheckbox = loginCheckbox
+    panel.loginCheckbox = CreateCheckbox(content, "MoxieTrackerLoginMessageOption", OPTIONS_LOGIN_ROW_Y,
+        "Show version message at login", function(self)
+            MoxieTrackerDB.suppressLoginMessage = not self:GetChecked()
+        end)
 
-    -- Master Moxie visibility (#43): global, not per-character -- unchecking
-    -- this hides Moxie from the tracker regardless of the per-profession
-    -- picks on the Moxie Professions page. Those per-profession picks only
-    -- take effect while this stays checked.
-    local moxieCheckbox = CreateFrame("CheckButton", "MoxieTrackerMoxieOption", content, "UICheckButtonTemplate")
-    moxieCheckbox:SetSize(24, 24)
-    moxieCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", 0, OPTIONS_MOXIE_ROW_Y)
-    moxieCheckbox.label = moxieCheckbox:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    moxieCheckbox.label:SetPoint("LEFT", moxieCheckbox, "RIGHT", 4, 0)
-    moxieCheckbox.label:SetText("Show Moxie")
-    moxieCheckbox:SetScript("OnClick", function(self)
-        MoxieTrackerDB.hideMoxie = not self:GetChecked()
-        if ns.frame:IsShown() then
-            ns.UpdateDisplay()
-        end
-    end)
-    panel.moxieCheckbox = moxieCheckbox
+    -- Master Moxie toggle (#43); the Moxie Professions page applies only while it is on.
+    panel.moxieCheckbox = CreateCheckbox(content, "MoxieTrackerMoxieOption", OPTIONS_MOXIE_ROW_Y,
+        "Show Moxie", function(self)
+            MoxieTrackerDB.hideMoxie = not self:GetChecked()
+            IfShown(ns.UpdateDisplay)
+        end)
 
-    -- Separate from muting individual characters/professions: this is the
-    -- blunt "I don't want this window at all" off switch, independent of
-    -- either roster's mute state.
-    local knowledgeWindowCheckbox = CreateFrame("CheckButton", "MoxieTrackerKnowledgeWindowOption", content,
-        "UICheckButtonTemplate")
-    knowledgeWindowCheckbox:SetSize(24, 24)
-    knowledgeWindowCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", 0, OPTIONS_KNOWLEDGE_WINDOW_ROW_Y)
-    knowledgeWindowCheckbox.label = knowledgeWindowCheckbox:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    knowledgeWindowCheckbox.label:SetPoint("LEFT", knowledgeWindowCheckbox, "RIGHT", 4, 0)
-    knowledgeWindowCheckbox.label:SetText("Show Knowledge Points window")
-    knowledgeWindowCheckbox:SetScript("OnClick", function(self)
-        MoxieTrackerDB.hideKnowledgeWindow = not self:GetChecked()
-        if ns.frame:IsShown() then
-            ns.UpdateKnowledgeDisplay()
-        end
-    end)
-    panel.knowledgeWindowCheckbox = knowledgeWindowCheckbox
+    panel.knowledgeWindowCheckbox = CreateCheckbox(content, "MoxieTrackerKnowledgeWindowOption",
+        OPTIONS_KNOWLEDGE_WINDOW_ROW_Y, "Show Knowledge Points window", function(self)
+            MoxieTrackerDB.hideKnowledgeWindow = not self:GetChecked()
+            IfShown(ns.UpdateKnowledgeDisplay)
+        end)
 
-    local concentrationWindowCheckbox = CreateFrame("CheckButton", "MoxieTrackerConcentrationWindowOption", content,
-        "UICheckButtonTemplate")
-    concentrationWindowCheckbox:SetSize(24, 24)
-    concentrationWindowCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", 0, OPTIONS_CONCENTRATION_WINDOW_ROW_Y)
-    concentrationWindowCheckbox.label = concentrationWindowCheckbox:CreateFontString(nil, "OVERLAY",
-        "GameFontHighlight")
-    concentrationWindowCheckbox.label:SetPoint("LEFT", concentrationWindowCheckbox, "RIGHT", 4, 0)
-    concentrationWindowCheckbox.label:SetText("Show Concentration window")
-    concentrationWindowCheckbox:SetScript("OnClick", function(self)
-        MoxieTrackerDB.hideConcentrationWindow = not self:GetChecked()
-        if ns.frame:IsShown() then
-            ns.UpdateConcentrationDisplay()
-        end
-        ns.RefreshConcentrationTicker()
-    end)
-    panel.concentrationWindowCheckbox = concentrationWindowCheckbox
+    panel.concentrationWindowCheckbox = CreateCheckbox(content, "MoxieTrackerConcentrationWindowOption",
+        OPTIONS_CONCENTRATION_WINDOW_ROW_Y, "Show Concentration window", function(self)
+            MoxieTrackerDB.hideConcentrationWindow = not self:GetChecked()
+            IfShown(ns.UpdateConcentrationDisplay)
+            ns.RefreshConcentrationTicker()
+        end)
 
     local positionHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     positionHeader:SetPoint("TOPLEFT", content, "TOPLEFT", 0, OPTIONS_POSITION_HEADER_Y)
     positionHeader:SetText("Position")
 
-    -- Column labels, aligned with CreatePositionRow's own layout (a 90px
-    -- window-name label plus 4px gap puts the X box's left edge at x=110;
-    -- the X box's 50px width plus 8px gap puts the Y box's at x=168) so
-    -- they sit directly above each row's boxes, sharing the header's row
-    -- rather than costing an extra one.
+    -- Column labels above CreatePositionRow's boxes: X box at 16+90+4 = 110,
+    -- Y box at 110+50+8 = 168.
     local xColumnLabel = content:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
     xColumnLabel:SetPoint("TOPLEFT", content, "TOPLEFT", 110, OPTIONS_POSITION_HEADER_Y)
     xColumnLabel:SetWidth(50)
@@ -421,8 +346,6 @@ local function CreateGeneralPanel()
     panel.positionFields.knowledge = CreatePositionRow(content, OPTIONS_POSITION_KNOWLEDGE_ROW_Y, WINDOWS[2])
     panel.positionFields.concentration = CreatePositionRow(content, OPTIONS_POSITION_CONCENTRATION_ROW_Y, WINDOWS[3])
 
-    -- Tracked-row checkboxes start at OPTIONS_FIRST_ROW_Y; RefreshGeneralOptions
-    -- positions each one (row count, so start Y, isn't known until then).
     panel.empty = content:CreateFontString(nil, "ARTWORK", "GameFontDisable")
     panel.empty:SetText("Nothing to configure yet - open a profession or collect a tracked item.")
     panel.empty:Hide()
@@ -432,49 +355,21 @@ local function CreateGeneralPanel()
 end
 
 --------------------------------------------------------------------------
--- Moxie Professions subcategory: Moxie's per-profession visibility list
--- (#43). Global, not per-character -- the master "Show Moxie" checkbox on
--- General is also global, so there is nothing character-specific to key
--- this list on. A Moxie profession's hidden state already lives on its
--- currency ID alone via ns.IsHidden/ns.SetHidden (the same mechanism the
--- General page's tracked-currency list already used before this page
--- existed), so this page lists all eleven professions unconditionally
--- rather than gating on what the currently-logged-in character has
--- trained the way Character Professions/Concentration Professions do.
+-- Moxie Professions page (#43): all eleven professions, account-wide, keyed by
+-- currency ID through ns.IsHidden/ns.SetHidden.
 --------------------------------------------------------------------------
-
-local function EnsureMoxieProfessionRow(panel, index)
-    return EnsureListRow(panel, panel.moxieProfessionRows, index, "MoxieTrackerMoxieProfessionOption", function(self)
-        ns.SetHidden(self.entryKey, not self:GetChecked())
-        if ns.frame:IsShown() then
-            ns.UpdateDisplay()
-        end
-    end)
-end
 
 function ns.RefreshMoxieProfessionsOptions()
     local panel = ns.moxieProfessionsPanel
-    local rowsY = 0 - OPTIONS_HEADER_HEIGHT
-
-    for _, row in ipairs(panel.moxieProfessionRows) do
-        row:Hide()
-    end
-
-    for index, profession in ipairs(ns.MOXIE_PROFESSIONS) do
-        local entryKey = ns.EntryKey(profession.id, nil, nil)
-        local row = EnsureMoxieProfessionRow(panel, index)
-        row.entryKey = entryKey
-        local info = C_CurrencyInfo.GetCurrencyInfo(profession.id)
-        row.label:SetText((info and info.name) or profession.name)
-        row:SetChecked(not ns.IsHidden(entryKey))
-        PositionRow(panel, row, rowsY - ((index - 1) * OPTIONS_ROW_HEIGHT))
-        row:Show()
-    end
-
-    local rowCount = #ns.MOXIE_PROFESSIONS
-    local listBottomY = rowsY - (rowCount * OPTIONS_ROW_HEIGHT)
-    panel.content:SetHeight(math.max(1, -listBottomY + OPTIONS_BOTTOM_MARGIN))
-    panel.scrollFrame:UpdateScrollChildRect()
+    local bottomY = RenderCheckRows(panel, panel.moxieProfessionRows, "MoxieTrackerMoxieProfessionOption",
+        OnTrackedRowClick, ns.MOXIE_PROFESSIONS, 0 - OPTIONS_HEADER_HEIGHT, function(row, profession)
+            local entryKey = ns.EntryKey(profession.id, nil, nil)
+            row.entryKey = entryKey
+            local info = C_CurrencyInfo.GetCurrencyInfo(profession.id)
+            row.label:SetText((info and info.name) or profession.name)
+            row:SetChecked(not ns.IsHidden(entryKey))
+        end)
+    SetContentBottom(panel, bottomY)
 end
 
 local function CreateMoxieProfessionsPanel()
@@ -486,22 +381,14 @@ local function CreateMoxieProfessionsPanel()
 end
 
 --------------------------------------------------------------------------
--- Thresholds subcategory: all eleven color thresholds and a single reset
--- button (#40 follow-up: Concentration's 8 per-profession thresholds share
--- this page with Moxie/Unalloyed Abundance/Fused Vitality rather than
--- having their own separate section -- they already share one flat
--- MoxieTrackerDB.thresholds table).
+-- Thresholds page: every colour threshold and one reset button.
 --------------------------------------------------------------------------
 
 local OPTIONS_THRESHOLD_UA_ROW_Y = 0
 local OPTIONS_THRESHOLD_MOXIE_ROW_Y = OPTIONS_THRESHOLD_UA_ROW_Y - OPTIONS_ROW_HEIGHT
 local OPTIONS_THRESHOLD_FV_ROW_Y = OPTIONS_THRESHOLD_MOXIE_ROW_Y - OPTIONS_ROW_HEIGHT
 
--- Concentration's checkbox and eight per-profession thresholds get their own
--- header (#48 follow-up), separating them from Unalloyed Abundance/Moxie/
--- Fused Vitality above -- those three are unrelated currencies sharing a
--- flat list, while everything under this header is specifically about
--- Concentration.
+-- Concentration section (#48, #49).
 local OPTIONS_THRESHOLD_CONCENTRATION_HEADER_Y = OPTIONS_THRESHOLD_FV_ROW_Y - OPTIONS_ROW_HEIGHT
 local OPTIONS_THRESHOLD_HIDE_ROW_Y = OPTIONS_THRESHOLD_CONCENTRATION_HEADER_Y - OPTIONS_HEADER_HEIGHT
 local OPTIONS_THRESHOLD_CONCENTRATION_FIRST_Y = OPTIONS_THRESHOLD_HIDE_ROW_Y - OPTIONS_ROW_HEIGHT
@@ -527,9 +414,7 @@ local function CreateThresholdsPanel()
 
     local content = panel.content
 
-    -- Thresholds are always non-negative, so SetNumeric(true) is enough
-    -- validation on its own; a cleared box (empty string) still needs the
-    -- same tonumber() nil-check as the position fields.
+    -- SetNumeric(true) rejects anything but digits; an empty box is caught by tonumber().
     local unalloyedEditBox = CreateSettingField(content, OPTIONS_THRESHOLD_UA_ROW_Y, "Unalloyed Abundance")
     local moxieEditBox = CreateSettingField(content, OPTIONS_THRESHOLD_MOXIE_ROW_Y, "Moxie")
     local fusedVitalityEditBox = CreateSettingField(content, OPTIONS_THRESHOLD_FV_ROW_Y, "Fused Vitality")
@@ -544,33 +429,20 @@ local function CreateThresholdsPanel()
     concentrationHeader:SetPoint("TOPLEFT", content, "TOPLEFT", 0, OPTIONS_THRESHOLD_CONCENTRATION_HEADER_Y)
     concentrationHeader:SetText("Concentration")
 
-    -- Purely a display filter, not a threshold value itself, so it is kept
-    -- out of the "Reset thresholds" button below -- resetting the numeric
-    -- thresholds is not expected to also silently flip this back on.
-    local hideUnderThresholdCheckbox = CreateFrame("CheckButton", "MoxieTrackerHideConcentrationUnderThresholdOption",
-        content, "UICheckButtonTemplate")
-    hideUnderThresholdCheckbox:SetSize(24, 24)
-    hideUnderThresholdCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", 0, OPTIONS_THRESHOLD_HIDE_ROW_Y)
-    hideUnderThresholdCheckbox.label = hideUnderThresholdCheckbox:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    hideUnderThresholdCheckbox.label:SetPoint("LEFT", hideUnderThresholdCheckbox, "RIGHT", 4, 0)
-    hideUnderThresholdCheckbox.label:SetText("Hide Concentration values under threshold")
-    hideUnderThresholdCheckbox:SetScript("OnClick", function(self)
-        MoxieTrackerDB.hideConcentrationUnderThreshold = self:GetChecked() and true or nil
-        if ns.frame:IsShown() then
-            ns.UpdateConcentrationDisplay()
-        end
-    end)
-    panel.hideUnderThresholdCheckbox = hideUnderThresholdCheckbox
+    -- A display filter, not a threshold, so "Reset thresholds" leaves it alone.
+    panel.hideUnderThresholdCheckbox = CreateCheckbox(content, "MoxieTrackerHideConcentrationUnderThresholdOption",
+        OPTIONS_THRESHOLD_HIDE_ROW_Y, "Hide Concentration values under threshold", function(self)
+            MoxieTrackerDB.hideConcentrationUnderThreshold = self:GetChecked() and true or nil
+            IfShown(ns.UpdateConcentrationDisplay)
+        end)
 
-    -- Each threshold commits independently, unlike the Position fields: they
-    -- are unrelated settings, so one bad entry should not revert the others.
+    -- Each threshold commits on its own; one bad entry does not revert the others.
     local function CommitThreshold(box, key)
         local value = tonumber(box:GetText())
         if not value then
             box:SetText(tostring(ns.GetThreshold(key)))
             return
         end
-        MoxieTrackerDB.thresholds = MoxieTrackerDB.thresholds or {}
         MoxieTrackerDB.thresholds[key] = value
         if ns.frame:IsShown() then
             ns.UpdateDisplay()
@@ -613,7 +485,7 @@ local function CreateThresholdsPanel()
     resetThresholdsButton:SetPoint("TOPLEFT", content, "TOPLEFT", 0, OPTIONS_THRESHOLD_RESET_Y)
     resetThresholdsButton:SetText("Reset thresholds")
     resetThresholdsButton:SetScript("OnClick", function()
-        MoxieTrackerDB.thresholds = nil
+        MoxieTrackerDB.thresholds = {}
         for _, field in ipairs(thresholdFields) do
             field.box:SetText(tostring(ns.GetThreshold(field.key)))
         end
@@ -623,58 +495,44 @@ local function CreateThresholdsPanel()
         end
     end)
 
-    -- Every row on this page has a fixed, build-time-known position (unlike
-    -- General's tracked-currency list or Muting's four rosters), so the
-    -- scroll child's height is set once here rather than recomputed on
-    -- every refresh.
-    content:SetHeight(math.max(1, -OPTIONS_THRESHOLD_RESET_Y + OPTIONS_BOTTOM_MARGIN))
-    panel.scrollFrame:UpdateScrollChildRect()
+    -- Fixed layout, so the scroll child is sized once.
+    SetContentBottom(panel, OPTIONS_THRESHOLD_RESET_Y)
 
     panel:SetScript("OnShow", ns.RefreshThresholdsOptions)
     ns.thresholdsPanel = panel
 end
 
 --------------------------------------------------------------------------
--- Characters subcategory: Knowledge's whole-character mute list (#41 --
--- previously grouped with the other three mute lists on one Muting page).
+-- Characters page: Knowledge whole-character mutes.
 --------------------------------------------------------------------------
 
-local function EnsureCharacterRow(panel, index)
-    return EnsureListRow(panel, panel.charRows, index, "MoxieTrackerCharacterOption", function(self)
-        ns.SetCharacterMuted(self.entryKey, not self:GetChecked())
-        if ns.frame:IsShown() then
-            ns.UpdateDisplay()
-        end
-    end)
+-- Bound to roster entries ({ key, name, muted }) on the Characters and Concentration pages.
+local function BindCharacterRow(row, entry)
+    row.entryKey = entry.key
+    row.label:SetText(entry.name)
+    row:SetChecked(not entry.muted)
 end
 
--- includeMuted=true so a muted character stays listed (unchecked) instead
--- of disappearing along with its row -- the only way to un-mute it. The
--- current character is always in this list, even at 0 points, so it can be
--- pre-muted before it earns any.
+-- Bound to profession-roster entries on the two profession-mute pages.
+local function BindProfessionRow(row, entry)
+    row.characterKey = entry.characterKey
+    row.professionName = entry.professionName
+    row.label:SetText(string.format("%s \226\128\148 %s", entry.characterName, entry.professionName))
+    row:SetChecked(not entry.muted)
+end
+
+local function OnCharacterRowClick(self)
+    ns.SetCharacterMuted(self.entryKey, not self:GetChecked())
+    IfShown(ns.UpdateDisplay)
+end
+
+-- Muted characters stay listed (unchecked) so they can be un-muted. The current
+-- character is always listed, even at 0 points.
 function ns.RefreshCharactersOptions()
     local panel = ns.charactersPanel
-    local charRowsY = 0 - OPTIONS_HEADER_HEIGHT
-
-    local roster = ns.CollectKnowledgeRoster(true)
-
-    for _, row in ipairs(panel.charRows) do
-        row:Hide()
-    end
-
-    for index, entry in ipairs(roster) do
-        local row = EnsureCharacterRow(panel, index)
-        row.entryKey = entry.key
-        row.label:SetText(entry.name)
-        row:SetChecked(not entry.muted)
-        PositionRow(panel, row, charRowsY - ((index - 1) * OPTIONS_ROW_HEIGHT))
-        row:Show()
-    end
-
-    local charRowCount = math.max(#roster, 1)
-    local charListBottomY = charRowsY - (charRowCount * OPTIONS_ROW_HEIGHT)
-    panel.content:SetHeight(math.max(1, -charListBottomY + OPTIONS_BOTTOM_MARGIN))
-    panel.scrollFrame:UpdateScrollChildRect()
+    local bottomY = RenderCheckRows(panel, panel.charRows, "MoxieTrackerCharacterOption", OnCharacterRowClick,
+        ns.CollectKnowledgeRoster(true), 0 - OPTIONS_HEADER_HEIGHT, BindCharacterRow)
+    SetContentBottom(panel, bottomY)
 end
 
 local function CreateCharactersPanel()
@@ -686,54 +544,22 @@ local function CreateCharactersPanel()
 end
 
 --------------------------------------------------------------------------
--- Character Professions subcategory: Knowledge's per-profession mute list.
--- Finer-grained than Characters -- mutes a single profession for a single
--- character without dropping the whole character from the roster.
+-- Character Professions page: Knowledge per-profession mutes.
 --------------------------------------------------------------------------
 
-local function EnsureProfessionRow(panel, index)
-    return EnsureListRow(panel, panel.professionRows, index, "MoxieTrackerProfessionOption", function(self)
-        ns.SetKnowledgeProfessionMuted(self.characterKey, self.professionName, not self:GetChecked())
-        if ns.frame:IsShown() then
-            ns.UpdateDisplay()
-        end
-    end)
+local function OnProfessionRowClick(self)
+    ns.SetKnowledgeProfessionMuted(self.characterKey, self.professionName, not self:GetChecked())
+    IfShown(ns.UpdateDisplay)
 end
 
--- See ns.CollectKnowledgeProfessionRoster for why a wholly-muted character
--- doesn't also appear here.
 function ns.RefreshCharacterProfessionsOptions()
     local panel = ns.characterProfessionsPanel
-    local professionRowsY = 0 - OPTIONS_HEADER_HEIGHT
-
+    local startY = 0 - OPTIONS_HEADER_HEIGHT
     local professionList = ns.CollectKnowledgeProfessionRoster()
-
-    for _, row in ipairs(panel.professionRows) do
-        row:Hide()
-    end
-
-    for index, entry in ipairs(professionList) do
-        local row = EnsureProfessionRow(panel, index)
-        row.characterKey = entry.characterKey
-        row.professionName = entry.professionName
-        row.label:SetText(string.format("%s \226\128\148 %s", entry.characterName, entry.professionName))
-        row:SetChecked(not entry.muted)
-        PositionRow(panel, row, professionRowsY - ((index - 1) * OPTIONS_ROW_HEIGHT))
-        row:Show()
-    end
-
-    if #professionList == 0 then
-        panel.empty:ClearAllPoints()
-        panel.empty:SetPoint("TOPLEFT", panel.content, "TOPLEFT", 0, professionRowsY)
-        panel.empty:Show()
-    else
-        panel.empty:Hide()
-    end
-
-    local professionRowCount = math.max(#professionList, 1)
-    local professionListBottomY = professionRowsY - (professionRowCount * OPTIONS_ROW_HEIGHT)
-    panel.content:SetHeight(math.max(1, -professionListBottomY + OPTIONS_BOTTOM_MARGIN))
-    panel.scrollFrame:UpdateScrollChildRect()
+    local bottomY = RenderCheckRows(panel, panel.professionRows, "MoxieTrackerProfessionOption",
+        OnProfessionRowClick, professionList, startY, BindProfessionRow)
+    UpdateEmptyText(panel, #professionList == 0, startY)
+    SetContentBottom(panel, bottomY)
 end
 
 local function CreateCharacterProfessionsPanel()
@@ -748,45 +574,20 @@ local function CreateCharacterProfessionsPanel()
 end
 
 --------------------------------------------------------------------------
--- Concentration subcategory: Concentration's own independent
--- whole-character mute list (#40), mirroring Characters exactly but
--- against ns.SetConcentrationCharacterMuted -- muting a character's
--- Concentration never touches their Knowledge mute, and vice versa.
+-- Concentration page (#40): Concentration whole-character mutes.
 --------------------------------------------------------------------------
 
-local function EnsureConcentrationCharacterRow(panel, index)
-    return EnsureListRow(panel, panel.concentrationCharRows, index, "MoxieTrackerConcentrationCharacterOption",
-        function(self)
-            ns.SetConcentrationCharacterMuted(self.entryKey, not self:GetChecked())
-            if ns.frame:IsShown() then
-                ns.UpdateConcentrationDisplay()
-            end
-        end)
+local function OnConcentrationCharacterRowClick(self)
+    ns.SetConcentrationCharacterMuted(self.entryKey, not self:GetChecked())
+    IfShown(ns.UpdateConcentrationDisplay)
 end
 
 function ns.RefreshConcentrationOptions()
     local panel = ns.concentrationPanel
-    local charRowsY = 0 - OPTIONS_HEADER_HEIGHT
-
-    local concentrationRoster = ns.CollectConcentrationRoster(true)
-
-    for _, row in ipairs(panel.concentrationCharRows) do
-        row:Hide()
-    end
-
-    for index, entry in ipairs(concentrationRoster) do
-        local row = EnsureConcentrationCharacterRow(panel, index)
-        row.entryKey = entry.key
-        row.label:SetText(entry.name)
-        row:SetChecked(not entry.muted)
-        PositionRow(panel, row, charRowsY - ((index - 1) * OPTIONS_ROW_HEIGHT))
-        row:Show()
-    end
-
-    local charRowCount = math.max(#concentrationRoster, 1)
-    local charListBottomY = charRowsY - (charRowCount * OPTIONS_ROW_HEIGHT)
-    panel.content:SetHeight(math.max(1, -charListBottomY + OPTIONS_BOTTOM_MARGIN))
-    panel.scrollFrame:UpdateScrollChildRect()
+    local bottomY = RenderCheckRows(panel, panel.concentrationCharRows, "MoxieTrackerConcentrationCharacterOption",
+        OnConcentrationCharacterRowClick, ns.CollectConcentrationRoster(true), 0 - OPTIONS_HEADER_HEIGHT,
+        BindCharacterRow)
+    SetContentBottom(panel, bottomY)
 end
 
 local function CreateConcentrationPanel()
@@ -798,53 +599,23 @@ local function CreateConcentrationPanel()
 end
 
 --------------------------------------------------------------------------
--- Concentration Professions subcategory: Concentration's per-profession
--- mute list (#40), mirroring Character Professions against
--- ns.SetConcentrationProfessionMuted.
+-- Concentration Professions page (#40): Concentration per-profession mutes.
 --------------------------------------------------------------------------
 
-local function EnsureConcentrationProfessionRow(panel, index)
-    return EnsureListRow(panel, panel.concentrationProfessionRows, index,
-        "MoxieTrackerConcentrationProfessionOption", function(self)
-            ns.SetConcentrationProfessionMuted(self.characterKey, self.professionName, not self:GetChecked())
-            if ns.frame:IsShown() then
-                ns.UpdateConcentrationDisplay()
-            end
-        end)
+local function OnConcentrationProfessionRowClick(self)
+    ns.SetConcentrationProfessionMuted(self.characterKey, self.professionName, not self:GetChecked())
+    IfShown(ns.UpdateConcentrationDisplay)
 end
 
 function ns.RefreshConcentrationProfessionsOptions()
     local panel = ns.concentrationProfessionsPanel
-    local professionRowsY = 0 - OPTIONS_HEADER_HEIGHT
-
-    local concentrationProfessionList = ns.CollectConcentrationProfessionRoster()
-
-    for _, row in ipairs(panel.concentrationProfessionRows) do
-        row:Hide()
-    end
-
-    for index, entry in ipairs(concentrationProfessionList) do
-        local row = EnsureConcentrationProfessionRow(panel, index)
-        row.characterKey = entry.characterKey
-        row.professionName = entry.professionName
-        row.label:SetText(string.format("%s \226\128\148 %s", entry.characterName, entry.professionName))
-        row:SetChecked(not entry.muted)
-        PositionRow(panel, row, professionRowsY - ((index - 1) * OPTIONS_ROW_HEIGHT))
-        row:Show()
-    end
-
-    if #concentrationProfessionList == 0 then
-        panel.empty:ClearAllPoints()
-        panel.empty:SetPoint("TOPLEFT", panel.content, "TOPLEFT", 0, professionRowsY)
-        panel.empty:Show()
-    else
-        panel.empty:Hide()
-    end
-
-    local professionRowCount = math.max(#concentrationProfessionList, 1)
-    local professionListBottomY = professionRowsY - (professionRowCount * OPTIONS_ROW_HEIGHT)
-    panel.content:SetHeight(math.max(1, -professionListBottomY + OPTIONS_BOTTOM_MARGIN))
-    panel.scrollFrame:UpdateScrollChildRect()
+    local startY = 0 - OPTIONS_HEADER_HEIGHT
+    local professionList = ns.CollectConcentrationProfessionRoster()
+    local bottomY = RenderCheckRows(panel, panel.concentrationProfessionRows,
+        "MoxieTrackerConcentrationProfessionOption", OnConcentrationProfessionRowClick, professionList, startY,
+        BindProfessionRow)
+    UpdateEmptyText(panel, #professionList == 0, startY)
+    SetContentBottom(panel, bottomY)
 end
 
 local function CreateConcentrationProfessionsPanel()
@@ -859,22 +630,19 @@ local function CreateConcentrationProfessionsPanel()
 end
 
 --------------------------------------------------------------------------
--- Character Order subcategory (#51): controls the order characters are
--- listed in the Knowledge Points and Concentration windows -- one shared
--- order for both. Alphabetical by default; Up/Down below persists an
--- explicit order the moment either is first clicked.
+-- Character Order page (#51): one order shared by both roster windows.
 --------------------------------------------------------------------------
 
 local OPTIONS_CHARACTER_ORDER_RESET_Y = 0
 local OPTIONS_CHARACTER_ORDER_FIRST_ROW_Y = OPTIONS_CHARACTER_ORDER_RESET_Y - OPTIONS_ROW_HEIGHT - OPTIONS_SECTION_GAP
 
--- Recomputes the full known-character list (already sorted per the current
--- order), swaps the clicked row with its neighbor, and persists the entire
--- resulting key sequence -- this is what turns a still-alphabetical (or
--- partially customized) order into a fully explicit one the moment the user
--- first clicks Up or Down. A character appended at the alphabetical tail
--- (never customized, or new since the last customization) is baked into the
--- saved order this same way the next time it's moved.
+local function RedrawRosters()
+    ns.UpdateKnowledgeDisplay()
+    ns.UpdateConcentrationDisplay()
+end
+
+-- Swaps a character with its neighbour and saves the whole resulting order, which
+-- also fixes any alphabetically appended characters into place.
 local function MoveCharacterOrder(entryKey, direction)
     local roster = ns.CollectKnownCharacters()
     local index
@@ -902,21 +670,10 @@ local function MoveCharacterOrder(entryKey, direction)
     ns.SetCharacterOrder(newOrder)
 
     ns.RefreshCharacterOrderOptions()
-
-    -- #50: every control here that redraws a roster window must check
-    -- ns.frame:IsShown() first, matching whether the crafting window is
-    -- actually open -- six other call sites redrew the Concentration window
-    -- unconditionally before that fix, popping it up with no profession open.
-    if ns.frame:IsShown() then
-        ns.UpdateKnowledgeDisplay()
-        ns.UpdateConcentrationDisplay()
-    end
+    IfShown(RedrawRosters)
 end
 
--- Not built on EnsureListRow: this row needs a label plus two buttons, and
--- EnsureListRow's pooled shape only ever wraps a single checkbox. Each row is
--- instead its own container Frame, positioned via the same PositionRow every
--- other page uses, with the label and buttons anchored inside it.
+-- Label plus Up/Down buttons in a container frame, so not built on EnsureListRow.
 local function EnsureCharacterOrderRow(panel, index)
     local row = panel.orderRows[index]
     if not row then
@@ -968,10 +725,7 @@ function ns.RefreshCharacterOrderOptions()
         row:Show()
     end
 
-    local rowCount = math.max(#roster, 1)
-    local listBottomY = OPTIONS_CHARACTER_ORDER_FIRST_ROW_Y - (rowCount * OPTIONS_ROW_HEIGHT)
-    panel.content:SetHeight(math.max(1, -listBottomY + OPTIONS_BOTTOM_MARGIN))
-    panel.scrollFrame:UpdateScrollChildRect()
+    SetContentBottom(panel, OPTIONS_CHARACTER_ORDER_FIRST_ROW_Y - (math.max(#roster, 1) * OPTIONS_ROW_HEIGHT))
 end
 
 local function CreateCharacterOrderPanel()
@@ -987,10 +741,7 @@ local function CreateCharacterOrderPanel()
     resetOrderButton:SetScript("OnClick", function()
         ns.ClearCharacterOrder()
         ns.RefreshCharacterOrderOptions()
-        if ns.frame:IsShown() then
-            ns.UpdateKnowledgeDisplay()
-            ns.UpdateConcentrationDisplay()
-        end
+        IfShown(RedrawRosters)
     end)
 
     panel:SetScript("OnShow", ns.RefreshCharacterOrderOptions)
@@ -1010,24 +761,17 @@ CreateConcentrationPanel()
 CreateConcentrationProfessionsPanel()
 CreateCharacterOrderPanel()
 
-if Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterCanvasLayoutSubcategory
-    and Settings.RegisterAddOnCategory then
-    generalCategory = Settings.RegisterCanvasLayoutCategory(ns.generalPanel, "MoxieTracker")
-    Settings.RegisterAddOnCategory(generalCategory)
-    Settings.RegisterCanvasLayoutSubcategory(generalCategory, ns.moxieProfessionsPanel, "Moxie Professions")
-    Settings.RegisterCanvasLayoutSubcategory(generalCategory, ns.thresholdsPanel, "Thresholds")
-    Settings.RegisterCanvasLayoutSubcategory(generalCategory, ns.charactersPanel, "Characters")
-    Settings.RegisterCanvasLayoutSubcategory(generalCategory, ns.characterProfessionsPanel, "Character Professions")
-    Settings.RegisterCanvasLayoutSubcategory(generalCategory, ns.concentrationPanel, "Concentration")
-    Settings.RegisterCanvasLayoutSubcategory(generalCategory, ns.concentrationProfessionsPanel,
-        "Concentration Professions")
-    Settings.RegisterCanvasLayoutSubcategory(generalCategory, ns.characterOrderPanel, "Character Order")
-end
+generalCategory = Settings.RegisterCanvasLayoutCategory(ns.generalPanel, "MoxieTracker")
+Settings.RegisterAddOnCategory(generalCategory)
+Settings.RegisterCanvasLayoutSubcategory(generalCategory, ns.moxieProfessionsPanel, "Moxie Professions")
+Settings.RegisterCanvasLayoutSubcategory(generalCategory, ns.thresholdsPanel, "Thresholds")
+Settings.RegisterCanvasLayoutSubcategory(generalCategory, ns.charactersPanel, "Characters")
+Settings.RegisterCanvasLayoutSubcategory(generalCategory, ns.characterProfessionsPanel, "Character Professions")
+Settings.RegisterCanvasLayoutSubcategory(generalCategory, ns.concentrationPanel, "Concentration")
+Settings.RegisterCanvasLayoutSubcategory(generalCategory, ns.concentrationProfessionsPanel,
+    "Concentration Professions")
+Settings.RegisterCanvasLayoutSubcategory(generalCategory, ns.characterOrderPanel, "Character Order")
 
 function ns.OpenOptions()
-    if generalCategory and Settings and Settings.OpenToCategory then
-        Settings.OpenToCategory(generalCategory:GetID())
-        return true
-    end
-    return false
+    Settings.OpenToCategory(generalCategory:GetID())
 end

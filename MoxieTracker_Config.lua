@@ -18,23 +18,16 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 --]]
 
--- ns is addon-private: it is the vararg table WoW hands every file listed in
--- the TOC, so it is how MoxieTracker's files share state without adding
--- globals. This file loads first and owns identity, config, and the
--- SavedVariables accessors -- nothing here touches a frame.
+-- Loads first: identity, config tables and SavedVariables accessors. No frames.
 local ADDON_NAME, ns = ...
 
--- Every command-output call site routes through this instead of hand-writing
--- its own copy of the colour code, so the addon has exactly one place that
--- owns the prefix.
 local PREFIX = "|cff33ff99MoxieTracker|r: "
 function ns.Print(fmt, ...)
     local msg = select("#", ...) > 0 and fmt:format(...) or fmt
     print(PREFIX .. msg)
 end
 
--- The TOC's @project-version@ placeholder is only substituted by the packager
--- at release time, so an unpackaged dev copy still carries the literal token.
+-- @project-version@ is only substituted by the packager, so a dev copy keeps the token.
 function ns.GetVersion()
     local version = C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version")
     if not version or version == "" or version == "@project-version@" then
@@ -43,19 +36,15 @@ function ns.GetVersion()
     return version
 end
 
--- Identifies the current character for the account-wide knowledge roster
--- (#38). Name alone collides across realms, so the key includes realm;
--- the name is returned separately since it's what actually gets displayed.
+-- Roster key (#38): name alone collides across realms. The bare name is what gets displayed.
 function ns.GetCharacterKey()
     local name = UnitName("player")
     local realm = GetRealmName()
     return name .. "-" .. realm, name
 end
 
--- Character display order (#51), shared by the Knowledge Points and
--- Concentration windows. nil (the default) means pure alphabetical; once set,
--- it's an explicit array of character keys in the order the user dragged them
--- into via the Character Order options page.
+-- Character display order (#51) shared by both roster windows: nil means alphabetical,
+-- otherwise an array of character keys.
 function ns.GetCharacterOrder()
     return MoxieTrackerDB and MoxieTrackerDB.characterOrder
 end
@@ -68,12 +57,26 @@ function ns.ClearCharacterOrder()
     MoxieTrackerDB.characterOrder = nil
 end
 
--- Pure so it's testable without stubbing MoxieTrackerDB: takes the order as a
--- parameter instead of reading ns.GetCharacterOrder() itself. A roster entry
--- not present in orderedKeys (a new alt, or every entry before the user has
--- ever customized anything) falls back to alphabetical-by-name, appended
--- after every entry that IS listed -- so new characters keep showing up
--- automatically instead of needing to be added to the order by hand.
+-- Sub-tables that always exist once ns.InitSavedVariables has run (#54).
+local SAVED_TABLES = {
+    "hidden", "thresholds", "windows",
+    "mutedCharacters", "mutedProfessions", "mutedConcentrationCharacters", "mutedConcentrationProfessions",
+    "knowledge", "concentration", "concentrationCurrencyIDs", "learnedProfessions",
+}
+
+-- Run at ADDON_LOADED, and again after /moxie reset settings clears fields.
+function ns.InitSavedVariables()
+    if type(MoxieTrackerDB) ~= "table" then
+        MoxieTrackerDB = {}
+    end
+    for _, field in ipairs(SAVED_TABLES) do
+        if type(MoxieTrackerDB[field]) ~= "table" then
+            MoxieTrackerDB[field] = {}
+        end
+    end
+end
+
+-- Entries not in orderedKeys (e.g. a new alt) follow the listed ones, alphabetically.
 function ns.SortRosterByCharacterOrder(roster, orderedKeys)
     local rank = {}
     if orderedKeys then
@@ -94,25 +97,16 @@ function ns.SortRosterByCharacterOrder(roster, orderedKeys)
     end)
 end
 
--- Shown even at zero. A currency the character has not discovered is absent
--- from the currency list entirely, so these must be queried by ID or they would
--- silently have no row at all.
+-- Shown even at zero. An undiscovered currency is absent from the currency list,
+-- so these are queried by ID.
 ns.ALWAYS_SHOWN_IDS = {
     3376, -- Shard of Dundun
     3377, -- Unalloyed Abundance
 }
 
--- Shown only when held, and only for a profession this character actually
--- has (ns.CollectTracked's Pass 2 gates on `enum` via ns.IsProfessionLearned
--- -- the same reasoning as ns.CONCENTRATION_PROFESSIONS/Concentration's own
--- account-wide-currency-ID leak below: C_CurrencyInfo.GetCurrencyInfo
--- happily returns a valid nonzero quantity for a Moxie currency ID any
--- character on the account has ever earned, not just ones the CURRENT
--- character has trained. Reported live in-game: a character with only one
--- profession showed both that profession's Moxie and a second profession's
--- Moxie it never had). `enum` is Enum.Profession, kept alongside `id` the
--- same way ns.CONCENTRATION_PROFESSIONS does, so ns.IsProfessionLearned can
--- check it directly.
+-- Shown only when held and the profession is learned: GetCurrencyInfo returns a
+-- nonzero quantity for any Moxie an alt on the account has earned. `enum` is
+-- Enum.Profession, for ns.IsProfessionLearned.
 ns.MOXIE_PROFESSIONS = {
     { id = 3256, enum = Enum.Profession.Alchemy, name = "Alchemy" }, -- Artisan Alchemist's Moxie
     { id = 3257, enum = Enum.Profession.Blacksmithing, name = "Blacksmithing" }, -- Artisan Blacksmith's Moxie
@@ -127,26 +121,12 @@ ns.MOXIE_PROFESSIONS = {
     { id = 3266, enum = Enum.Profession.Tailoring, name = "Tailoring" }, -- Artisan Tailor's Moxie
 }
 
--- Flat ID list derived from the above, for the two call sites that only
--- ever needed bare IDs (the keyword-fallback MOXIE_ID_SET in the Collect
--- file, and /moxie debug dump's "tracked IDs" printer) and have no reason
--- to know profession identity.
 ns.MOXIE_IDS = {}
 for _, profession in ipairs(ns.MOXIE_PROFESSIONS) do
     table.insert(ns.MOXIE_IDS, profession.id)
 end
 
--- One currency per profession, all eleven accounted for: each profession's
--- unspent Midnight Knowledge, confirmed in-game (#38). Named per profession,
--- not just a bare ID list, because the Knowledge Points roster breaks a
--- character's total down per profession when they hold points in more than
--- one (ns.CollectUnspentKnowledgeByProfession in the Collect file). `enum`
--- (Enum.Profession) is used by ns.CollectKnowledgeByProfession (#42
--- follow-up) to list a profession the character has actually trained even
--- while its points sit at 0 -- the options panel's Character Professions
--- mute list needs that row available before the profession has ever earned
--- a point, the same reasoning MOXIE_PROFESSIONS/CONCENTRATION_PROFESSIONS
--- already follow for their own enum field.
+-- Unspent Midnight Knowledge per profession, confirmed in-game (#38).
 ns.KNOWLEDGE_PROFESSIONS = {
     { id = 3150, enum = Enum.Profession.Alchemy, name = "Alchemy" },
     { id = 3151, enum = Enum.Profession.Blacksmithing, name = "Blacksmithing" },
@@ -161,25 +141,10 @@ ns.KNOWLEDGE_PROFESSIONS = {
     { id = 3160, enum = Enum.Profession.Tailoring, name = "Tailoring" },
 }
 
--- Crafter's Concentration (#40) has no static currency ID to list here the
--- way Moxie and Knowledge do: it is resolved live per profession via
--- C_TradeSkillUI.GetConcentrationCurrencyID(skillLineID), confirmed against
--- derfloh205/CraftSim's ConcentrationTracker.lua/ConcentrationData.lua
--- (see docs/CURRENCY_DISCOVERY.md's Sources section). Only the 8 crafting professions carry
--- Concentration -- the 3 gathering professions among MoxieTracker's eleven
--- (Herbalism, Mining, Skinning) do not, same exclusion CraftSim's
--- GATHERING_PROFESSIONS check makes.
---
--- Keyed by `enum` (Enum.Profession, the client's own locale-independent
--- profession identifier -- confirmed as the `.profession` field on
--- C_TradeSkillUI.GetProfessionInfoBySkillLineID's return value via
--- Blizzard's own TradeSkillUITypesDocumentation.lua) rather than by the
--- struct's `.professionName` field, which is localized display text and
--- would silently never match this list on a non-English client -- the same
--- "matched by ID, not name, so it works on any locale" principle
--- MOXIE_IDS/KNOWLEDGE_PROFESSIONS already follow. `name` is MoxieTracker's
--- own stable English label, used as the storage/display key throughout,
--- same role KNOWLEDGE_PROFESSIONS' `name` field plays.
+-- Concentration (#40) has no static currency ID: it is resolved per profession via
+-- C_TradeSkillUI.GetConcentrationCurrencyID (see docs/CURRENCY_DISCOVERY.md).
+-- Gathering professions have none. Matched by Enum.Profession (the `.profession`
+-- field of GetProfessionInfoBySkillLineID), not the localized professionName.
 ns.CONCENTRATION_PROFESSIONS = {
     { enum = Enum.Profession.Alchemy, name = "Alchemy" },
     { enum = Enum.Profession.Blacksmithing, name = "Blacksmithing" },
@@ -196,45 +161,32 @@ for _, profession in ipairs(ns.CONCENTRATION_PROFESSIONS) do
     ns.CONCENTRATION_PROFESSION_BY_ENUM[profession.enum] = profession.name
 end
 
--- Bag items, not currencies: these come from C_Item rather than C_CurrencyInfo
--- and are counted across bags, bank, and reagent bank. Always listed, the same
--- way ALWAYS_SHOWN_IDS is, so a row at zero reads as "none" rather than
--- vanishing. `name` is only a fallback for the moments before the client has
--- cached the item.
+-- Bag items counted across bags, bank and reagent bank; always listed. `name` is
+-- a fallback until the client caches the item.
 ns.TRACKED_ITEMS = {
     { itemID = 245345, name = "Fused Vitality" },
 }
 
--- GET_ITEM_INFO_RECEIVED fires for every item entering the client's cache,
--- not just ones this addon tracks, so the UI file's redraw filter needs this.
+-- Redraw filter for GET_ITEM_INFO_RECEIVED, which fires for every item.
 ns.TRACKED_ITEM_ID_SET = {}
 for _, item in ipairs(ns.TRACKED_ITEMS) do
     ns.TRACKED_ITEM_ID_SET[item.itemID] = true
 end
 
--- Weekly quests (#53), shown as a Done / Not done status rather than a count.
--- Always listed, the same way ALWAYS_SHOWN_IDS is. Completion is read
--- per character via C_QuestLog.IsQuestFlaggedCompleted -- confirmed in-game
--- that IsQuestFlaggedCompletedOnAccount reads true on a character that has
--- not done it once any alt has, which would misreport this character.
--- `name` is only a fallback for a title the client has not cached yet.
--- `sortAfter` is a currency ID: ns.CollectTracked sorts every row by name,
--- which would put "Abundant Offerings" at the top, so the row is pinned
--- directly below that currency's row instead.
+-- Weekly quests (#53), shown as Done / Not done and always listed. Read per
+-- character: IsQuestFlaggedCompletedOnAccount reads true once any alt has done it.
+-- `name` is a fallback title; `sortAfter` pins the row below that currency ID.
 ns.TRACKED_QUESTS = {
     { questID = 89507, name = "Abundant Offerings", sortAfter = 3376 }, -- below Shard of Dundun
 }
 
--- Same role as TRACKED_ITEM_ID_SET: QUEST_TURNED_IN and QUEST_DATA_LOAD_RESULT
--- fire for every quest, so the UI file's redraw filter needs this.
+-- Redraw filter for QUEST_TURNED_IN / QUEST_DATA_LOAD_RESULT, which fire for every quest.
 ns.TRACKED_QUEST_ID_SET = {}
 for _, quest in ipairs(ns.TRACKED_QUESTS) do
     ns.TRACKED_QUEST_ID_SET[quest.questID] = true
 end
 
--- Fallback only, for a moxie currency added in a future patch that is not in
--- MOXIE_IDS yet. Matching by name is locale-dependent and will not fire on a
--- non-English client, which is precisely why the IDs above are the primary path.
+-- Fallback for a future moxie currency not yet in MOXIE_IDS. English-only.
 ns.KEYWORDS = {
     "moxie",
     "dundun",
@@ -245,38 +197,24 @@ ns.YELLOW = "|cffffd200"
 ns.RED = "|cffff3333"
 ns.WHITE = "|cffffffff"
 
--- User-editable via the options panel's Color thresholds section. Shard of
--- Dundun is deliberately not here: its rule below is a fixed three-band cutoff
--- tied to the currency's actual in-game cap of 8, not a single threshold, so
--- making it editable would invite a config that contradicts the game
--- mechanic it models.
+-- Editable on the Thresholds page. Shard of Dundun is fixed: its bands follow its cap of 8.
 local DEFAULT_THRESHOLDS = {
     unalloyedAbundance = 800,
     moxie = 600,
     fusedVitality = 20,
 }
 
--- Concentration (#40) gets its own threshold per crafting profession, unlike
--- Moxie's single shared threshold across all eleven -- confirmed with the
--- user, since how much Concentration is "enough" varies by profession.
--- Flat keys in the same DEFAULT_THRESHOLDS/MoxieTrackerDB.thresholds table
--- rather than a parallel structure, so the options panel's existing "Reset
--- thresholds" button resets these for free. Every profession defaults to
--- 300; only Alchemy's default was specified, so the rest start at the same
--- value until tuned individually.
+-- One Concentration threshold per profession (#40), as flat keys so "Reset thresholds" covers them.
 for _, profession in ipairs(ns.CONCENTRATION_PROFESSIONS) do
     DEFAULT_THRESHOLDS["concentration:" .. profession.name] = 300
 end
 
 function ns.GetThreshold(key)
-    local thresholds = MoxieTrackerDB and MoxieTrackerDB.thresholds
-    local value = thresholds and thresholds[key]
+    local value = MoxieTrackerDB.thresholds[key]
     return type(value) == "number" and value or DEFAULT_THRESHOLDS[key]
 end
 
--- Quantity coloring, keyed by currency ID. Moxie is deliberately absent: its
--- ID varies per profession, so it is handled by name in the Collect file's
--- GetQuantityColor.
+-- Keyed by currency ID. Moxie is handled in ns.GetQuantityColor, since its ID varies per profession.
 ns.QUANTITY_COLOR = {
     -- Shard of Dundun caps at 8, so the yellow fallback only ever covers 0-5.
     [3376] = function(quantity)
@@ -299,14 +237,8 @@ ns.ITEM_QUANTITY_COLOR = {
     end,
 }
 
--- Concentration coloring (#40): red at the currency's real cap
--- (maxQuantity, read live from C_CurrencyInfo rather than a hardcoded
--- 1000 -- the same "tied to the actual game mechanic" reasoning as Shard
--- of Dundun's fixed band above) always wins, then green at the
--- profession's own editable threshold, yellow otherwise. maxQuantity of 0
--- or nil means the currency has not been discovered yet (see
--- ns.CONCENTRATION_PROFESSIONS above), which has nothing sensible to
--- color against.
+-- Concentration (#40): red at the live cap, green at the profession's threshold,
+-- yellow otherwise. No maxQuantity means the currency is undiscovered.
 function ns.GetConcentrationColor(profession, quantity, maxQuantity)
     if not maxQuantity or maxQuantity <= 0 then
         return ns.WHITE
@@ -320,18 +252,12 @@ function ns.GetConcentrationColor(profession, quantity, maxQuantity)
     return ns.YELLOW
 end
 
--- Display filter for the "Hide Concentration values under threshold" option
--- (#48): kept separate from ns.GetConcentrationColor since a hidden line
--- still needs no color decision made at all, and separate from the
--- MoxieTrackerDB flag check so callers don't have to duplicate the
--- "concentration:" .. profession key format.
+-- For "Hide Concentration values under threshold" (#48).
 function ns.IsConcentrationBelowThreshold(profession, quantity)
     return quantity < ns.GetThreshold("concentration:" .. profession)
 end
 
--- Stable identity for a row, used as the key for the show/hide setting. IDs are
--- preferred because names are localized; the name form only ever applies to an
--- entry that reached us through the keyword fallback with no resolvable ID.
+-- Persisted show/hide key. The name form only applies to a keyword-fallback entry with no ID.
 function ns.EntryKey(currencyID, itemID, name, questID)
     if currencyID then
         return "currency:" .. currencyID
@@ -344,118 +270,73 @@ function ns.EntryKey(currencyID, itemID, name, questID)
 end
 
 function ns.IsHidden(key)
-    return MoxieTrackerDB.hidden ~= nil and MoxieTrackerDB.hidden[key] == true
+    return MoxieTrackerDB.hidden[key] == true
 end
 
--- Stored only for hidden rows. Visible is the default, so writing `false` would
--- grow the saved variables with entries that mean nothing.
+-- Only hidden rows are stored; visible is the default.
 function ns.SetHidden(key, hidden)
-    if hidden then
-        MoxieTrackerDB.hidden = MoxieTrackerDB.hidden or {}
-        MoxieTrackerDB.hidden[key] = true
-    elseif MoxieTrackerDB.hidden then
-        MoxieTrackerDB.hidden[key] = nil
-    end
+    MoxieTrackerDB.hidden[key] = hidden and true or nil
 end
 
--- Muted characters (#38 follow-up): once muted, a character's knowledge-roster
--- entry never renders again, even after it re-snapshots on a later login.
--- Mirrors ns.IsHidden/ns.SetHidden's shape exactly, just keyed by character
--- rather than by currency/item row.
+-- Whole-character mute for the Knowledge roster (#38).
 function ns.IsCharacterMuted(key)
-    return MoxieTrackerDB.mutedCharacters ~= nil and MoxieTrackerDB.mutedCharacters[key] == true
+    return MoxieTrackerDB.mutedCharacters[key] == true
 end
 
 function ns.SetCharacterMuted(key, muted)
+    MoxieTrackerDB.mutedCharacters[key] = muted and true or nil
+end
+
+-- Per-character profession mutes, [characterKey][professionName] = true. The
+-- inner per-character table is created on demand.
+local function IsProfessionMuted(store, characterKey, professionName)
+    return store[characterKey] ~= nil and store[characterKey][professionName] == true
+end
+
+local function SetProfessionMuted(store, characterKey, professionName, muted)
     if muted then
-        MoxieTrackerDB.mutedCharacters = MoxieTrackerDB.mutedCharacters or {}
-        MoxieTrackerDB.mutedCharacters[key] = true
-    elseif MoxieTrackerDB.mutedCharacters then
-        MoxieTrackerDB.mutedCharacters[key] = nil
+        store[characterKey] = store[characterKey] or {}
+        store[characterKey][professionName] = true
+    elseif store[characterKey] then
+        store[characterKey][professionName] = nil
     end
 end
 
--- Muted professions, per character: finer-grained than ns.IsCharacterMuted --
--- lets a character stay on the roster while hiding just the one profession
--- (an alt's mained-out trade, say) whose points aren't worth tracking.
--- Keyed by character key first, then profession name, so muting is per
--- character rather than account-wide (the same profession can be muted for
--- one alt and left visible on another).
 function ns.IsKnowledgeProfessionMuted(characterKey, professionName)
-    local muted = MoxieTrackerDB.mutedProfessions
-    return muted ~= nil and muted[characterKey] ~= nil and muted[characterKey][professionName] == true
+    return IsProfessionMuted(MoxieTrackerDB.mutedProfessions, characterKey, professionName)
 end
 
 function ns.SetKnowledgeProfessionMuted(characterKey, professionName, muted)
-    if muted then
-        MoxieTrackerDB.mutedProfessions = MoxieTrackerDB.mutedProfessions or {}
-        MoxieTrackerDB.mutedProfessions[characterKey] = MoxieTrackerDB.mutedProfessions[characterKey] or {}
-        MoxieTrackerDB.mutedProfessions[characterKey][professionName] = true
-    elseif MoxieTrackerDB.mutedProfessions and MoxieTrackerDB.mutedProfessions[characterKey] then
-        MoxieTrackerDB.mutedProfessions[characterKey][professionName] = nil
-    end
+    SetProfessionMuted(MoxieTrackerDB.mutedProfessions, characterKey, professionName, muted)
 end
 
--- Concentration muting (#40): the exact same whole-character/per-profession
--- pair as Knowledge's above, just against Concentration's own
--- mutedConcentrationCharacters/mutedConcentrationProfessions tables, so
--- muting a character's (or one profession's) Concentration never touches
--- their Knowledge mute state, and vice versa.
+-- Concentration (#40) keeps its own mute tables, independent of Knowledge's.
 function ns.IsConcentrationCharacterMuted(key)
-    return MoxieTrackerDB.mutedConcentrationCharacters ~= nil
-        and MoxieTrackerDB.mutedConcentrationCharacters[key] == true
+    return MoxieTrackerDB.mutedConcentrationCharacters[key] == true
 end
 
 function ns.SetConcentrationCharacterMuted(key, muted)
-    if muted then
-        MoxieTrackerDB.mutedConcentrationCharacters = MoxieTrackerDB.mutedConcentrationCharacters or {}
-        MoxieTrackerDB.mutedConcentrationCharacters[key] = true
-    elseif MoxieTrackerDB.mutedConcentrationCharacters then
-        MoxieTrackerDB.mutedConcentrationCharacters[key] = nil
-    end
+    MoxieTrackerDB.mutedConcentrationCharacters[key] = muted and true or nil
 end
 
 function ns.IsConcentrationProfessionMuted(characterKey, professionName)
-    local muted = MoxieTrackerDB.mutedConcentrationProfessions
-    return muted ~= nil and muted[characterKey] ~= nil and muted[characterKey][professionName] == true
+    return IsProfessionMuted(MoxieTrackerDB.mutedConcentrationProfessions, characterKey, professionName)
 end
 
 function ns.SetConcentrationProfessionMuted(characterKey, professionName, muted)
-    if muted then
-        MoxieTrackerDB.mutedConcentrationProfessions = MoxieTrackerDB.mutedConcentrationProfessions or {}
-        MoxieTrackerDB.mutedConcentrationProfessions[characterKey] =
-            MoxieTrackerDB.mutedConcentrationProfessions[characterKey] or {}
-        MoxieTrackerDB.mutedConcentrationProfessions[characterKey][professionName] = true
-    elseif MoxieTrackerDB.mutedConcentrationProfessions
-        and MoxieTrackerDB.mutedConcentrationProfessions[characterKey] then
-        MoxieTrackerDB.mutedConcentrationProfessions[characterKey][professionName] = nil
-    end
+    SetProfessionMuted(MoxieTrackerDB.mutedConcentrationProfessions, characterKey, professionName, muted)
 end
 
--- Offset from the crafting window's TOPRIGHT corner, one entry per window
--- (#40 -- previously a single MoxieTrackerDB.offsetX/Y for the main window
--- only). Only "main" has a numeric default: it hangs off the crafting
--- window's right edge at a placement verified in-game. Knowledge and
--- Concentration have no numeric default here -- until dragged, they stay
--- anchored beneath the window above them (a live SetPoint relationship set
--- up in the UI file), which this function cannot express since it never
--- touches a frame.
+-- Per-window offset from the crafting window (#40). Only "main" has a default;
+-- the others stack beneath the window above them until dragged.
 local WINDOW_OFFSET_DEFAULTS = {
     main = { x = 4, y = -440 },
 }
 
--- Third return value: which of the crafting frame's corners the offset is
--- relative to (#47) -- "right" (the only mode that ever existed before
--- this) anchors the window's TOPLEFT to the crafting frame's TOPRIGHT;
--- "left" anchors the window's TOPRIGHT to the crafting frame's TOPLEFT, for
--- a window the user dragged to rest on the frame's *left* side. Always
--- "right" for a legacy/default offset with no stored side, so nothing
--- changes for any offset saved before this existed.
+-- Third return (#47): "right" anchors the window's TOPLEFT to the crafting frame's
+-- TOPRIGHT; "left" anchors its TOPRIGHT to the frame's TOPLEFT. Defaults to "right".
 function ns.GetOffset(windowKey)
-    -- Called from the UI file's file-scope ApplyAnchor(), which runs before
-    -- ADDON_LOADED has had a chance to initialize MoxieTrackerDB. SavedVariables
-    -- are only guaranteed populated once ADDON_LOADED fires for this addon; see
-    -- the UI file's ADDON_LOADED handler for the real initialization.
+    -- Also called at file scope, before ADDON_LOADED has loaded MoxieTrackerDB.
     local windows = MoxieTrackerDB and MoxieTrackerDB.windows
     local stored = windows and windows[windowKey]
     local x = stored and stored.offsetX
@@ -470,42 +351,23 @@ function ns.GetOffset(windowKey)
     return nil, nil, nil
 end
 
--- `side` is optional and only ever passed by ns.UI's drag-stop handler,
--- which is the one place that can actually tell which side of the crafting
--- frame the window landed on. Every other caller (the options panel's
--- manual X/Y edit boxes) calls this with just x/y, and must not silently
--- flip a left-docked window back to "right" just because the user typed a
--- new number into one box -- so an omitted `side` preserves whatever was
--- already stored, rather than defaulting to "right" outright.
+-- `side` is only passed by the drag-stop handler; the options panel's X/Y boxes
+-- omit it, which keeps the stored side.
 function ns.SetOffset(windowKey, x, y, side)
     if not side then
-        local existing = MoxieTrackerDB.windows and MoxieTrackerDB.windows[windowKey]
+        local existing = MoxieTrackerDB.windows[windowKey]
         side = existing and existing.side
     end
-    MoxieTrackerDB.windows = MoxieTrackerDB.windows or {}
     MoxieTrackerDB.windows[windowKey] = { offsetX = x, offsetY = y, side = side }
 end
 
 function ns.ClearOffset(windowKey)
-    if MoxieTrackerDB.windows then
-        MoxieTrackerDB.windows[windowKey] = nil
-    end
+    MoxieTrackerDB.windows[windowKey] = nil
 end
 
--- Pure geometry, no frame objects, so it is testable without a live client
--- (#47): decides which of the crafting frame's edges a just-dropped window
--- should track from now on. ProfessionsFrame resizes across its own tabs --
--- confirmed live in-game, the Specializations tab is visibly wider than
--- Recipes/Crafting Orders, extending mostly leftward -- so a window
--- anchored to the frame's TOPRIGHT (the only anchor MoxieTracker had before
--- this) drifts along with however far right TOPRIGHT happens to sit, while
--- a window sitting to the frame's *left* actually needs to track its
--- TOPLEFT edge to hold a constant gap regardless of how wide the frame
--- gets. Unambiguous cases (window entirely clear of the frame on one side)
--- decide directly; an overlapping drop (on top of the frame, or only
--- nudged vertically) falls back to comparing centers, defaulting to
--- "right" on an exact tie -- what every offset meant before "left" existed,
--- so nudging a window near its already-anchored spot never flips it.
+-- Which crafting-frame edge a dropped window tracks (#47). ProfessionsFrame widens
+-- leftward on the Specializations tab, so a window left of it must track TOPLEFT.
+-- Overlapping drops compare centers; a tie stays "right".
 function ns.ComputeAnchorSide(windowLeft, windowRight, frameLeft, frameRight)
     if windowRight <= frameLeft then
         return "left"
@@ -521,8 +383,7 @@ function ns.ComputeAnchorSide(windowLeft, windowRight, frameLeft, frameRight)
     return "right"
 end
 
--- One-time upgrade path for the pre-#40 single offsetX/offsetY pair (main
--- window only) into windows.main.
+-- Upgrades the pre-#40 single offsetX/offsetY pair into windows.main.
 function ns.MigrateWindowOffset()
     if type(MoxieTrackerDB.offsetX) == "number" and type(MoxieTrackerDB.offsetY) == "number" then
         ns.SetOffset("main", MoxieTrackerDB.offsetX, MoxieTrackerDB.offsetY)
@@ -531,11 +392,7 @@ function ns.MigrateWindowOffset()
     MoxieTrackerDB.offsetY = nil
 end
 
--- Duration formatting for Concentration's "time until cap" (#40). nil or
--- <= 0 means already at cap (or not regenerating at all, e.g. an
--- undiscovered currency); otherwise days only show once there is at least
--- one, matching a Concentration cap that takes several hours to reach from
--- zero but never multiple days at the per-point recharge rates seen so far.
+-- Concentration time until cap (#40). nil or <= 0 reads as "at cap".
 function ns.FormatDuration(seconds)
     if not seconds or seconds <= 0 then
         return "at cap"

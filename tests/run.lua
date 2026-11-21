@@ -24,6 +24,8 @@ end
 
 local ns = {}
 LoadAddonFiles("MoxieTracker.toc", "MoxieTracker", ns)
+-- What the ADDON_LOADED handler does in the client.
+ns.InitSavedVariables()
 
 -- ns._learnedProfessionsCache (see ns.IsProfessionLearned) is module state
 -- that survives across every `do...end` scenario below, unlike the stub's
@@ -35,6 +37,7 @@ LoadAddonFiles("MoxieTracker.toc", "MoxieTracker", ns)
 local originalFixturesReset = fixtures.reset
 fixtures.reset = function()
     originalFixturesReset()
+    ns.InitSavedVariables()
     ns._learnedProfessionsCache = {}
 end
 
@@ -261,7 +264,7 @@ do
     assertEqual("Moxie override replaces the default, not adds to it",
         ns.GetQuantityColor({ currencyID = 3256, quantity = 600 }), YELLOW)
 
-    MoxieTrackerDB.thresholds = nil
+    MoxieTrackerDB.thresholds = {}
     assertEqual("clearing thresholds falls back to the default",
         ns.GetQuantityColor({ currencyID = 3256, quantity = 600 }), GREEN)
 end
@@ -298,11 +301,13 @@ do
         return printedLines[1] ~= nil and printedLines[1]:find(needle, 1, true) ~= nil
     end
 
+    fixtures.clearOpenedCategory()
     dispatch("")
-    check("bare command opens the options panel (S2)", firstLineHas("no Settings panel"))
+    check("bare command opens the options panel (S2)", fixtures.openedCategory() ~= nil)
 
+    fixtures.clearOpenedCategory()
     dispatch("options")
-    check("options opens the same way as bare", firstLineHas("no Settings panel"))
+    check("options opens the same way as bare", fixtures.openedCategory() ~= nil)
 
     dispatch("bogus")
     check("an unknown command names what was unrecognised (S4)", firstLineHas("Unknown command: bogus"))
@@ -345,17 +350,17 @@ do
     MoxieTrackerDB.debugLogging = true
     ns.frame.pinned = true
     dispatch("reset settings")
-    assertEqual("reset settings clears hidden rows", MoxieTrackerDB.hidden, nil)
-    assertEqual("reset settings clears muted knowledge characters", MoxieTrackerDB.mutedCharacters, nil)
-    assertEqual("reset settings clears muted knowledge professions", MoxieTrackerDB.mutedProfessions, nil)
+    assertEqual("reset settings clears hidden rows", next(MoxieTrackerDB.hidden), nil)
+    assertEqual("reset settings clears muted knowledge characters", next(MoxieTrackerDB.mutedCharacters), nil)
+    assertEqual("reset settings clears muted knowledge professions", next(MoxieTrackerDB.mutedProfessions), nil)
     assertEqual("reset settings clears muted concentration characters",
-        MoxieTrackerDB.mutedConcentrationCharacters, nil)
+        next(MoxieTrackerDB.mutedConcentrationCharacters), nil)
     assertEqual("reset settings clears muted concentration professions",
-        MoxieTrackerDB.mutedConcentrationProfessions, nil)
+        next(MoxieTrackerDB.mutedConcentrationProfessions), nil)
     assertEqual("reset settings clears the master Moxie toggle", MoxieTrackerDB.hideMoxie, nil)
     assertEqual("reset settings clears the Knowledge Points window toggle", MoxieTrackerDB.hideKnowledgeWindow, nil)
     assertEqual("reset settings clears the Concentration window toggle", MoxieTrackerDB.hideConcentrationWindow, nil)
-    assertEqual("reset settings clears threshold overrides", MoxieTrackerDB.thresholds, nil)
+    assertEqual("reset settings clears threshold overrides", next(MoxieTrackerDB.thresholds), nil)
     assertEqual("reset settings clears the Concentration under-threshold display toggle",
         MoxieTrackerDB.hideConcentrationUnderThreshold, nil)
     assertEqual("reset settings clears debug logging", MoxieTrackerDB.debugLogging, nil)
@@ -365,7 +370,7 @@ do
     dispatch("reset position")
     check("reset position reports what it did", firstLineHas("position reset"))
     assertEqual("reset position clears the saved offset, reset settings does not touch it",
-        MoxieTrackerDB.windows and MoxieTrackerDB.windows.main, nil)
+        MoxieTrackerDB.windows.main, nil)
 
     dispatch("status")
     check("status prints a multi-line settings summary", #printedLines >= 3)
@@ -1049,7 +1054,7 @@ do
     assertEqual("a per-profession override applies, at", ns.GetConcentrationColor("Alchemy", 500, 1000), GREEN)
     assertEqual("a different profession is unaffected by another's override",
         ns.GetConcentrationColor("Tailoring", 400, 1000), GREEN)
-    MoxieTrackerDB.thresholds = nil
+    MoxieTrackerDB.thresholds = {}
 end
 
 --------------------------------------------------------------------------
@@ -1393,7 +1398,7 @@ do
     assertEqual("a per-profession override applies", ns.IsConcentrationBelowThreshold("Alchemy", 499), true)
     assertEqual("a different profession is unaffected by another's override",
         ns.IsConcentrationBelowThreshold("Tailoring", 400), false)
-    MoxieTrackerDB.thresholds = nil
+    MoxieTrackerDB.thresholds = {}
 end
 
 --------------------------------------------------------------------------
@@ -1454,8 +1459,8 @@ do
     assertEqual("known characters default to alphabetical, second", known[2].name, "Bram")
     assertEqual("known characters default to alphabetical, third", known[3].name, "Charlie")
 
-    MoxieTrackerDB.knowledge = nil
-    MoxieTrackerDB.concentration = nil
+    MoxieTrackerDB.knowledge = {}
+    MoxieTrackerDB.concentration = {}
 end
 
 print(string.format("%d checks, %d failure(s)", count, failures))

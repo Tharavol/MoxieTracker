@@ -1,6 +1,4 @@
--- Depends on MoxieTracker_Config.lua's ns.* tables and accessors, loaded
--- first per the TOC. Pure collection/rendering logic: reads C_CurrencyInfo,
--- C_Item, and MoxieTrackerDB, and touches no frame.
+-- Data collection from C_CurrencyInfo, C_Item, C_QuestLog and MoxieTrackerDB. No frames.
 local _, ns = ...
 
 local function MatchesKeyword(text)
@@ -41,8 +39,7 @@ function ns.GetQuantityColor(entry)
     return ns.WHITE
 end
 
--- Quest rows (#53) carry a completion flag, not a count, so they get a status
--- word instead of a number: green once done for the week, yellow until then.
+-- Quest rows (#53) show a status word instead of a count.
 function ns.GetQuestStatus(entry)
     if entry.completed then
         return ns.GREEN, "Done"
@@ -68,13 +65,8 @@ function ns.GetCurrencyIDForIndex(index)
     end
 end
 
--- `includeHidden` is for the options panel, which has to list the rows the user
--- has switched off in order to offer switching them back on. `excludeMoxie`
--- is for the General page's own tracked-currency list (#43): individual
--- Moxie professions now have their own "Moxie Professions" page, so General
--- no longer lists them even with includeHidden set -- the live tracker
--- window (which calls this with neither argument) still needs Pass 2 below
--- to get Moxie at all.
+-- `includeHidden` lists switched-off rows for the options panel. `excludeMoxie` is
+-- for the General page (#43); Moxie has its own Moxie Professions page.
 function ns.CollectTracked(includeHidden, excludeMoxie)
     local tracked = {}
     local seenID, seenItemID, seenQuestID, seenName = {}, {}, {}, {}
@@ -129,8 +121,7 @@ function ns.CollectTracked(includeHidden, excludeMoxie)
         end
     end
 
-    -- Pass 1b (#53): weekly quests, always listed. Per-character completion,
-    -- not the account-wide flag -- see ns.TRACKED_QUESTS for why.
+    -- Pass 1b (#53): weekly quests, always listed. See ns.TRACKED_QUESTS.
     for _, quest in ipairs(ns.TRACKED_QUESTS) do
         local name = C_QuestLog.GetTitleForQuestID(quest.questID) or quest.name
         local entry = Add(nil, nil, name, 0, quest.questID)
@@ -140,15 +131,8 @@ function ns.CollectTracked(includeHidden, excludeMoxie)
         end
     end
 
-    -- Pass 2: by ID, only for professions this character actually has --
-    -- gated via ns.IsProfessionLearned (defined below), the same fix #40
-    -- applied to Concentration and for the same reason: GetCurrencyInfo
-    -- returns a valid nonzero quantity for a Moxie currency ID any
-    -- character on the account has ever earned, not just ones the CURRENT
-    -- character has trained. Also gated on the master "Show Moxie" toggle
-    -- (#43) and skipped outright when the caller excludes Moxie (the
-    -- General options page, which now points at the dedicated Moxie
-    -- Professions page instead).
+    -- Pass 2: Moxie by ID, only for learned professions (see ns.MOXIE_PROFESSIONS)
+    -- and only while "Show Moxie" (#43) is on.
     if not excludeMoxie and not MoxieTrackerDB.hideMoxie then
         for _, profession in ipairs(ns.MOXIE_PROFESSIONS) do
             local info = C_CurrencyInfo.GetCurrencyInfo(profession.id)
@@ -166,17 +150,10 @@ function ns.CollectTracked(includeHidden, excludeMoxie)
         Add(nil, item.itemID, name, count)
     end
 
-    -- Pass 4: keyword fallback over the currency list, for anything matching
-    -- that neither ID table knows about yet. A Moxie currency ID is
-    -- excluded here even if it matches by keyword: Pass 2 above already
-    -- made the deliberate, profession-gated call on every ID in
-    -- MOXIE_ID_SET, and this currency list walk has no way to repeat that
-    -- gating (it has no profession to check against) -- without the
-    -- exclusion, a profession's Moxie that Pass 2 correctly left out for a
-    -- character who never trained it would reappear here anyway, since the
-    -- currency is still visible in the full list account-wide once any
-    -- character has earned it (the same leak Pass 2 exists to close).
-    local size = C_CurrencyInfo.GetCurrencyListSize and C_CurrencyInfo.GetCurrencyListSize() or 0
+    -- Pass 4: keyword fallback over the currency list for anything neither ID
+    -- table knows. Known Moxie IDs are skipped: Pass 2 already applied the
+    -- learned-profession gate, which this walk cannot repeat.
+    local size = C_CurrencyInfo.GetCurrencyListSize()
     for index = 1, size do
         local info = C_CurrencyInfo.GetCurrencyListInfo(index)
         if IsTrackedCurrency(info) then
@@ -207,18 +184,9 @@ end
 -- Knowledge points roster (#38)
 --------------------------------------------------------------------------------
 
--- Unspent Midnight Knowledge for every profession the current character has
--- actually trained (ns.IsProfessionLearned), name-sorted, including one
--- currently sitting at 0 points. Gated the same way #40/#42 already gate
--- Concentration and Moxie: C_CurrencyInfo.GetCurrencyInfo returns a valid
--- struct for a Knowledge currency ID once any character on the account has
--- earned it, not just the current character, so an ungated read could
--- attribute a profession's Knowledge to a character who never trained it.
--- This is the source of truth ns.CollectUnspentKnowledgeByProfession below
--- and ns.SnapshotKnowledge both read from; the options panel's Character
--- Professions page (#42 follow-up) reads it directly, since a mute row
--- needs to be available for a trained profession before it has ever earned
--- a point, not just once it has.
+-- Knowledge for every learned profession, name-sorted, including those at 0 so the
+-- Character Professions page can mute them (#42). Gated on ns.IsProfessionLearned
+-- because Knowledge currency IDs are visible account-wide.
 function ns.CollectKnowledgeByProfession()
     local list = {}
     for _, profession in ipairs(ns.KNOWLEDGE_PROFESSIONS) do
@@ -233,12 +201,7 @@ function ns.CollectKnowledgeByProfession()
     return list
 end
 
--- Unspent Midnight Knowledge for the current character, broken down by
--- profession and name-sorted, dropping any profession currently at 0 -- the
--- "don't show what isn't there" rule the live tracker window and roster
--- apply throughout. See ns.CollectKnowledgeByProfession above, the gated
--- source of truth this filters, for why the gate on trained professions
--- exists.
+-- Same as above, without professions at 0.
 function ns.CollectUnspentKnowledgeByProfession()
     local list = {}
     for _, profession in ipairs(ns.CollectKnowledgeByProfession()) do
@@ -258,20 +221,9 @@ function ns.CollectUnspentKnowledge()
     return total
 end
 
--- Persists the current character's unspent Knowledge into the account-wide
--- roster, so it stays visible while playing a different character. Called
--- on logout (not login -- see the PLAYER_LOGOUT handler in
--- MoxieTracker_UI.lua for why); there is no scan of other characters,
--- because the client cannot see their state -- the roster grows one entry
--- at a time as each alt logs out, which is the whole "accumulation"
--- mechanism the issue asks for. The per-profession breakdown is saved
--- alongside the total so another character's roster entry can show it too,
--- not just the current one's -- including a trained profession still
--- sitting at 0 points (#42 follow-up), so an offline character's Character
--- Professions options row is available for muting without needing to log
--- back in first. ns.UpdateKnowledgeDisplay (the live window) filters those
--- back out at render time, so this does not change what the floating
--- window shows -- only what's available to the options panel.
+-- Saves this character's Knowledge into the account-wide roster at logout (see the
+-- PLAYER_LOGOUT handler); the client cannot read other characters' state. Professions
+-- at 0 are kept for the options panel (#42) and filtered out when rendering.
 function ns.SnapshotKnowledge()
     local key, name = ns.GetCharacterKey()
     local professions = ns.CollectKnowledgeByProfession()
@@ -280,21 +232,11 @@ function ns.SnapshotKnowledge()
         total = total + profession.points
     end
 
-    MoxieTrackerDB.knowledge = MoxieTrackerDB.knowledge or {}
     MoxieTrackerDB.knowledge[key] = { name = name, points = total, professions = professions }
 end
 
--- Drops any profession muted for this character from a raw professions list
--- (either the current character's live breakdown or a stored snapshot's) and
--- re-sums the total from what's left, so muting a profession also removes
--- its points from the character's displayed total rather than just hiding
--- the line. Returns nil, nil for a nil list (the pre-breakdown legacy shape),
--- so callers can tell "nothing to filter" apart from "filtered down to
--- nothing". Applied here, at roster-assembly time, rather than in
--- SnapshotKnowledge or CollectUnspentKnowledgeByProfession, so the raw data
--- keeps accumulating in storage and un-muting a profession later doesn't
--- need that character to log back in to reappear -- same reasoning as
--- ns.IsCharacterMuted only being checked in this function's Add().
+-- Drops muted professions and re-sums the total. Applied at read time so stored data
+-- stays complete. Returns nil, nil for a legacy entry with no breakdown.
 local function FilterMutedProfessions(characterKey, professions)
     if not professions then
         return nil, nil
@@ -310,20 +252,8 @@ local function FilterMutedProfessions(characterKey, professions)
     return filtered, total
 end
 
--- Returns the saved roster as a name-sorted array. The current character's
--- entry is always present and always live (not the last saved snapshot), so
--- spending or earning points mid-session doesn't look stale until the next
--- logout; every other character reflects whatever their last logout saw. A
--- character snapshotted before the per-profession breakdown existed carries
--- no `professions` field until their next logout re-snapshots it -- display
--- code treats that the same as a single-profession character (a plain
--- "Name: total" line) rather than erroring on the missing field.
---
--- `includeMuted` is for the options panel, which has to list muted characters
--- in order to offer un-muting them -- same shape as CollectTracked's
--- `includeHidden`. Muted is checked here rather than left to the caller so a
--- muted character can never slip back in through a display path that forgets
--- the filter.
+-- The current character is read live; others come from their last logout. A legacy
+-- entry may lack `professions`. `includeMuted` is for the options panel.
 function ns.CollectKnowledgeRoster(includeMuted)
     local currentKey, currentName = ns.GetCharacterKey()
     local roster = {}
@@ -347,7 +277,7 @@ function ns.CollectKnowledgeRoster(includeMuted)
         FilterMutedProfessions(currentKey, ns.CollectUnspentKnowledgeByProfession())
     Add(currentKey, currentName, currentTotal, currentProfessions)
 
-    for key, entry in pairs(MoxieTrackerDB.knowledge or {}) do
+    for key, entry in pairs(MoxieTrackerDB.knowledge) do
         local professions, total = FilterMutedProfessions(key, entry.professions)
         if professions then
             Add(key, entry.name, total, professions)
@@ -361,18 +291,8 @@ function ns.CollectKnowledgeRoster(includeMuted)
     return roster
 end
 
--- Flat character+profession list for the options panel's profession-mute
--- section, one row per profession any character has actually trained --
--- muted or not, and regardless of whether it currently holds any unspent
--- points (#42 follow-up: the mute control needs to exist before the
--- profession has ever earned a point, not just once it has), same "show it
--- anyway so there's a way to un-mute it" reasoning as CollectKnowledgeRoster's
--- includeMuted. Reads ns.CollectKnowledgeByProfession for the current
--- character (the gated, zero-inclusive source of truth) rather than
--- ns.CollectUnspentKnowledgeByProfession, which is display-only and would
--- drop a zero-point profession's row entirely. A fully muted character is
--- skipped entirely: its roster line never renders, so per-profession
--- controls for it would have nothing to affect.
+-- Character+profession rows for the Character Professions page: every learned
+-- profession, muted or not, including those at 0 (#42). Wholly muted characters are skipped.
 function ns.CollectKnowledgeProfessionRoster()
     local currentKey, currentName = ns.GetCharacterKey()
     local list = {}
@@ -394,7 +314,7 @@ function ns.CollectKnowledgeProfessionRoster()
 
     AddCharacter(currentKey, currentName, ns.CollectKnowledgeByProfession())
 
-    for key, entry in pairs(MoxieTrackerDB.knowledge or {}) do
+    for key, entry in pairs(MoxieTrackerDB.knowledge) do
         if key ~= currentKey then
             AddCharacter(key, entry.name, entry.professions)
         end
@@ -414,20 +334,9 @@ end
 -- Concentration roster (#40)
 --------------------------------------------------------------------------------
 
--- Attempts to learn the currently-open profession's Concentration currency
--- ID, persisting it into MoxieTrackerDB.concentrationCurrencyIDs so it does
--- not need rediscovering on a later login. Safe to call any time -- returns
--- nil for a gathering profession (no Concentration currency exists) or when
--- no profession's crafting window is open. See ns.CONCENTRATION_PROFESSIONS
--- in the Config file for why this is a live per-profession lookup rather
--- than a static ID table, and docs/CURRENCY_DISCOVERY.md's Sources section for how the API
--- shape was confirmed.
+-- Records the open profession's Concentration currency ID. Returns nil for a
+-- gathering profession or when no crafting window is open.
 function ns.DiscoverConcentrationCurrencyID()
-    if not C_TradeSkillUI or not C_TradeSkillUI.GetProfessionChildSkillLineID
-        or not C_TradeSkillUI.GetConcentrationCurrencyID or not C_TradeSkillUI.GetProfessionInfoBySkillLineID then
-        return nil
-    end
-
     local skillLineID = C_TradeSkillUI.GetProfessionChildSkillLineID()
     if not skillLineID or skillLineID <= 0 then
         return nil
@@ -444,21 +353,14 @@ function ns.DiscoverConcentrationCurrencyID()
         return nil
     end
 
-    MoxieTrackerDB.concentrationCurrencyIDs = MoxieTrackerDB.concentrationCurrencyIDs or {}
     MoxieTrackerDB.concentrationCurrencyIDs[professionName] = currencyID
     return professionName, currencyID
 end
 
--- Live read of one profession's Concentration for the current character, or
--- nil if that profession's currency ID has not been discovered yet (see
--- ns.DiscoverConcentrationCurrencyID). Returns the same three fields
--- C_CurrencyInfo.GetCurrencyInfo exposes for a regenerating currency:
--- quantity, maxQuantity, and the recharge interval in milliseconds per
--- point -- all read live, never hardcoded (confirmed available on this
--- struct via derfloh205/CraftSim's ConcentrationData:Update()).
+-- Live Concentration for the current character, or nil if the currency ID is not
+-- discovered yet. rechargeMS is milliseconds per point.
 function ns.CollectConcentrationForProfession(professionName)
-    local currencyIDs = MoxieTrackerDB.concentrationCurrencyIDs
-    local currencyID = currencyIDs and currencyIDs[professionName]
+    local currencyID = MoxieTrackerDB.concentrationCurrencyIDs[professionName]
     if not currencyID then
         return nil
     end
@@ -473,13 +375,8 @@ function ns.CollectConcentrationForProfession(professionName)
     }
 end
 
--- Projects a stored (possibly stale, for an offline character) Concentration
--- snapshot forward to "now", the same linear-regen formula
--- derfloh205/CraftSim's ConcentrationData:GetCurrentAmount()/:GetTimeUntil()
--- use: amount grows by one point per rechargeMS/1000 seconds elapsed since
--- lastUpdated, capped at maxQuantity. `secondsUntilCap` is 0 once already
--- there, or nil when the recharge rate isn't known (an undiscovered/zero
--- rechargeMS currency has nothing to project).
+-- Projects an offline snapshot to now: one point per rechargeMS since lastUpdated,
+-- capped at maxQuantity. `secondsUntilCap` is nil when the recharge rate is unknown.
 function ns.ProjectConcentration(snapshot)
     local rechargeSeconds = (snapshot.rechargeMS or 0) / 1000
     local current = snapshot.quantity or 0
@@ -497,69 +394,18 @@ function ns.ProjectConcentration(snapshot)
     return current, secondsUntilCap
 end
 
--- Whether the current character has actually learned `profession` (an
--- Enum.Profession value). Confirmed against derfloh205/CraftSim's
--- IsProfessionLearned (Util/Util.lua) and each function's real return
--- signature in Blizzard's own source
--- (Blizzard_ProfessionsBook.lua/Blizzard_WorldMapTemplates.lua):
--- GetProfessions() returns up to six profession-book slot indices
--- (prof1, prof2, archaeology, fishing, cooking, firstAid -- several
--- commonly nil, so each is checked individually rather than via ipairs()
--- over a table literal, which stops at the first nil and could skip a
--- later, populated slot), GetProfessionInfo(slotIndex)'s 7th return value
--- is that slot's skillLineID, and C_TradeSkillUI.GetProfessionInfoBySkillLineID
--- resolves the locale-independent Enum.Profession for it.
+-- Learned-profession detection. Currency IDs are account-wide, so GetCurrencyInfo
+-- answers for professions this character never trained; this gates them.
 --
--- This exists because C_CurrencyInfo.GetCurrencyInfo happily returns a
--- valid (0-quantity) struct for a Concentration currency ID discovered via
--- a *different* character on the account (currency IDs are account-wide
--- once known, see ns.DiscoverConcentrationCurrencyID), even for a
--- profession this character has never trained. Without this check, every
--- profession any alt had ever opened would show up for every character.
---
--- GetProfessions() is confirmed empirically to go dark by the time
--- PLAYER_LOGOUT fires -- returning nil for every one of the six slots, not
--- just an unrelated one -- even though the identical call succeeds earlier
--- in the same session (caught live via a debug trace written into
--- SavedVariables from ns.SnapshotConcentration, since a chat print during
--- logout is not reliably seen: a character with a currently-open Alchemy
--- and Engineering, both confirmed moments earlier via a live /run query,
--- still logged out with every profession reporting not-learned). Without a
--- fallback, that made ns.SnapshotConcentration -- the one and only caller
--- of this function that runs at logout -- silently write an empty
--- professions table for any character whose currency ID was already known
--- from a different character, rather than one they had to freshly
--- discover themselves this session (see the module comment above
--- ns.SnapshotConcentration for why only Tharavol/Galanodel/Ebonclad, who
--- each discovered their own profession's ID while the crafting window
--- was open, ever got real data).
---
--- MoxieTrackerDB.learnedProfessions (#46) is the same shape one tier further
--- out: a character whose session-local cache below was never warmed at all
--- before its own logout -- the session-local cache's own blind spot, since
--- it only helps once something has already populated it earlier in that
--- same session -- would otherwise write a permanently empty Knowledge
--- `professions` breakdown, silently dropping that character from the
--- Character Professions options page forever (#46: "only a few professions
--- shown despite multiple character logins from many more characters").
--- Written every time ComputeLearnedProfessions() succeeds, the same moment
--- the session-local cache is, so any character that has EVER had its
--- professions read successfully keeps that answer permanently rather than
--- needing to get lucky again on every later logout.
+-- GetProfessions() returns nil for all six slots by PLAYER_LOGOUT (confirmed
+-- in-game), so the last successful result is kept per character: in a
+-- session cache, and in MoxieTrackerDB.learnedProfessions (#46) for a session
+-- where the cache was never warmed.
 local function PersistLearnedProfessions(key, learned)
-    MoxieTrackerDB.learnedProfessions = MoxieTrackerDB.learnedProfessions or {}
     MoxieTrackerDB.learnedProfessions[key] = learned
 end
 
--- ns._learnedProfessionsCache remembers the last successfully-computed
--- learned set per character (keyed by ns.GetCharacterKey(), session-local
--- only -- never written to SavedVariables) so a logout-time API dropout
--- falls back to what was already confirmed live during normal play, rather
--- than concluding the character has no professions at all. Kept on `ns`
--- itself, not a plain module-local, purely so tests/run.lua can clear it
--- between scenarios the same way it resets MoxieTrackerDB -- real gameplay
--- never clears it mid-session, since a genuine session boundary always
--- means a fresh ns.WarmLearnedProfessionsCache call at PLAYER_ENTERING_WORLD.
+-- On `ns` so tests/run.lua can clear it between scenarios.
 ns._learnedProfessionsCache = {}
 
 local function AddSlotProfession(learned, slotIndex)
@@ -573,9 +419,8 @@ local function AddSlotProfession(learned, slotIndex)
     end
 end
 
--- Six slots checked individually rather than via ipairs() over a table
--- literal, which stops at the first nil and could skip a later, populated
--- slot -- several of the six are commonly nil.
+-- GetProfessions returns six slot indices, several commonly nil, so each is checked
+-- individually. GetProfessionInfo's 7th return is the slot's skillLineID.
 local function ComputeLearnedProfessions()
     local prof1, prof2, arch, fish, cook, firstAid = GetProfessions()
     if not (prof1 or prof2 or arch or fish or cook or firstAid) then
@@ -591,18 +436,9 @@ local function ComputeLearnedProfessions()
     return learned
 end
 
--- Populates ns._learnedProfessionsCache for the current character without
--- needing an ns.IsProfessionLearned(profession) call for a specific
--- profession first. Called from PLAYER_ENTERING_WORLD (see the UI file)
--- unconditionally, regardless of whether the tracker window is currently
--- shown, so the cache is warm well before PLAYER_LOGOUT can need it --
--- RefreshAllWindows, which every other ns.IsProfessionLearned caller runs
--- through, only fires while a tracker window is visible.
+-- Called at PLAYER_ENTERING_WORLD so the cache is warm before logout, even if no
+-- tracker window was ever shown.
 function ns.WarmLearnedProfessionsCache()
-    if not GetProfessions or not GetProfessionInfo or not C_TradeSkillUI
-        or not C_TradeSkillUI.GetProfessionInfoBySkillLineID then
-        return
-    end
     local learned = ComputeLearnedProfessions()
     if learned then
         local key = ns.GetCharacterKey()
@@ -612,35 +448,25 @@ function ns.WarmLearnedProfessionsCache()
 end
 
 function ns.IsProfessionLearned(profession)
-    if not GetProfessions or not GetProfessionInfo or not C_TradeSkillUI
-        or not C_TradeSkillUI.GetProfessionInfoBySkillLineID then
-        return false
-    end
     local key = ns.GetCharacterKey()
     local learned = ComputeLearnedProfessions()
     if learned then
         ns._learnedProfessionsCache[key] = learned
         PersistLearnedProfessions(key, learned)
     else
-        learned = ns._learnedProfessionsCache[key]
-            or (MoxieTrackerDB.learnedProfessions and MoxieTrackerDB.learnedProfessions[key])
+        learned = ns._learnedProfessionsCache[key] or MoxieTrackerDB.learnedProfessions[key]
     end
     return learned ~= nil and learned[profession] == true
 end
 
--- Persists the current character's Concentration into the account-wide
--- roster, one entry per profession whose currency ID is already known AND
--- that this character has actually learned (ns.IsProfessionLearned) --
--- mirrors ns.SnapshotKnowledge's per-logout accumulation, called from the
--- same PLAYER_LOGOUT handler (see MoxieTracker_UI.lua for why logout, not
--- entering-world). A profession discovered on some other character, but not
--- learned by this one, stays absent here entirely.
+-- Saves this character's Concentration at logout, like ns.SnapshotKnowledge, for
+-- each profession with a known currency ID that this character has learned.
 function ns.SnapshotConcentration()
     local key, name = ns.GetCharacterKey()
     local professions = {}
 
     for _, profession in ipairs(ns.CONCENTRATION_PROFESSIONS) do
-        if MoxieTrackerDB.concentrationCurrencyIDs and MoxieTrackerDB.concentrationCurrencyIDs[profession.name]
+        if MoxieTrackerDB.concentrationCurrencyIDs[profession.name]
             and ns.IsProfessionLearned(profession.enum) then
             local live = ns.CollectConcentrationForProfession(profession.name)
             if live then
@@ -654,22 +480,11 @@ function ns.SnapshotConcentration()
         end
     end
 
-    MoxieTrackerDB.concentration = MoxieTrackerDB.concentration or {}
     MoxieTrackerDB.concentration[key] = { name = name, professions = professions }
 end
 
--- Returns the saved Concentration roster as a name-sorted array, same shape
--- as ns.CollectKnowledgeRoster: the current character's professions are
--- always live (a direct ns.CollectConcentrationForProfession read, not
--- last-login's snapshot), every other character's are projected forward
--- from their last snapshot via ns.ProjectConcentration since Concentration
--- keeps regenerating while offline, unlike Knowledge. Each profession entry
--- carries `current` (rounded down to a whole point, matching what the
--- in-game currency display shows) and `secondsUntilCap` for the caller to
--- format. Muting is Concentration's own independent whole-character/
--- per-profession pair (ns.IsConcentrationCharacterMuted/
--- ns.IsConcentrationProfessionMuted), so it never touches Knowledge's mute
--- state for the same character.
+-- Like ns.CollectKnowledgeRoster, but other characters are projected forward since
+-- Concentration regenerates offline. Projected `current` is floored to a whole point.
 function ns.CollectConcentrationRoster(includeMuted)
     local currentKey, currentName = ns.GetCharacterKey()
     local roster = {}
@@ -731,14 +546,9 @@ function ns.CollectConcentrationRoster(includeMuted)
         table.insert(roster, { key = key, name = name, professions = professions, muted = wholeMuted })
     end
 
-    -- Live source is gated by ns.IsProfessionLearned the same way
-    -- ns.SnapshotConcentration is (see the comment there): a currency ID
-    -- discovered via a different character is known account-wide, but
-    -- must not be attributed to a character who never trained that
-    -- profession.
     local liveSource = {}
     for _, profession in ipairs(ns.CONCENTRATION_PROFESSIONS) do
-        if MoxieTrackerDB.concentrationCurrencyIDs and MoxieTrackerDB.concentrationCurrencyIDs[profession.name]
+        if MoxieTrackerDB.concentrationCurrencyIDs[profession.name]
             and ns.IsProfessionLearned(profession.enum) then
             local live = ns.CollectConcentrationForProfession(profession.name)
             if live then
@@ -748,7 +558,7 @@ function ns.CollectConcentrationRoster(includeMuted)
     end
     Add(currentKey, currentName, liveSource, true)
 
-    for key, entry in pairs(MoxieTrackerDB.concentration or {}) do
+    for key, entry in pairs(MoxieTrackerDB.concentration) do
         Add(key, entry.name, entry.professions, false)
     end
 
@@ -757,12 +567,7 @@ function ns.CollectConcentrationRoster(includeMuted)
     return roster
 end
 
--- Every character the addon has ever seen, unioned across both rosters (#51):
--- a character can appear in only one -- a pure gatherer, say, has no
--- Concentration currency -- so neither ns.CollectKnowledgeRoster nor
--- ns.CollectConcentrationRoster alone is a complete list. Used only by the
--- Character Order options page; sorted the same way the two roster windows
--- are, so the options page shows exactly the order that will render in-game.
+-- Union of both rosters for the Character Order page (#51), in display order.
 function ns.CollectKnownCharacters()
     local seen = {}
     local list = {}
@@ -777,11 +582,11 @@ function ns.CollectKnownCharacters()
     local currentKey, currentName = ns.GetCharacterKey()
     Add(currentKey, currentName)
 
-    for key, entry in pairs(MoxieTrackerDB.knowledge or {}) do
+    for key, entry in pairs(MoxieTrackerDB.knowledge) do
         Add(key, entry.name)
     end
 
-    for key, entry in pairs(MoxieTrackerDB.concentration or {}) do
+    for key, entry in pairs(MoxieTrackerDB.concentration) do
         Add(key, entry.name)
     end
 
@@ -790,16 +595,8 @@ function ns.CollectKnownCharacters()
     return list
 end
 
--- Flat character+profession list for the options panel's Concentration
--- profession-mute section, mirroring ns.CollectKnowledgeProfessionRoster's
--- shape exactly (same characterKey/characterName/professionName/muted
--- fields, plus `current`/`maxQuantity` for context in place of Knowledge's
--- `points`). A wholly muted character is skipped entirely, same reasoning
--- as ns.CollectKnowledgeProfessionRoster: its roster line never renders, so
--- per-profession controls for it would have nothing to affect. Built from
--- ns.CollectConcentrationRoster(true) rather than reimplementing the
--- live-vs-projected read, so this and the tracker window always agree on
--- what a character's Concentration actually is.
+-- Concentration counterpart of ns.CollectKnowledgeProfessionRoster, built from the
+-- roster so both always agree.
 function ns.CollectConcentrationProfessionRoster()
     local list = {}
     for _, entry in ipairs(ns.CollectConcentrationRoster(true)) do

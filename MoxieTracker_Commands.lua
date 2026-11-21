@@ -1,5 +1,4 @@
--- Depends on all other MoxieTracker files, loaded last per the TOC. Slash
--- command registration and the /moxie handler.
+-- Slash command registration and the /moxie handler. Loads last.
 local _, ns = ...
 
 SLASH_MOXIETRACKER1 = "/moxie"
@@ -8,19 +7,13 @@ SLASH_MOXIETRACKER1 = "/moxie"
 SLASH_MOXIETRACKER2 = "/moxietracker"
 
 local function OpenOptions()
-    if not ns.OpenOptions() then
-        ns.Print("this client has no Settings panel; open Options > AddOns manually.")
-    end
+    ns.OpenOptions()
 end
 
--- The one-shot diagnostic dump, unchanged from the old bare "debug" command --
--- still the fastest way to see which currency IDs resolved -- just moved
--- behind "debug dump" now that "debug" on its own is a real logging toggle.
 local function PrintDebugDump()
     for _, window in ipairs({ "main", "knowledge", "concentration" }) do
         local offsetX, offsetY = ns.GetOffset(window)
-        local windows = MoxieTrackerDB.windows
-        local placement = (windows and windows[window]) and "user placed"
+        local placement = MoxieTrackerDB.windows[window] and "user placed"
             or (offsetX and "default" or "stacked below the window above it")
         if offsetX and offsetY then
             ns.Print("%s window offset %.1f, %.1f (%s); crafting frame %s",
@@ -47,8 +40,7 @@ local function PrintDebugDump()
     ns.Print("concentration currency IDs (discovered by opening each profession)")
     local discoveredAny = false
     for _, profession in ipairs(ns.CONCENTRATION_PROFESSIONS) do
-        local currencyID = MoxieTrackerDB.concentrationCurrencyIDs and
-            MoxieTrackerDB.concentrationCurrencyIDs[profession.name]
+        local currencyID = MoxieTrackerDB.concentrationCurrencyIDs[profession.name]
         if currencyID then
             discoveredAny = true
             local info = C_CurrencyInfo.GetCurrencyInfo(currencyID)
@@ -83,15 +75,13 @@ local function PrintDebugDump()
     end
 
     local hiddenCount = 0
-    if MoxieTrackerDB.hidden then
-        for key in pairs(MoxieTrackerDB.hidden) do
-            hiddenCount = hiddenCount + 1
-            ns.Print("  [hidden] %s", key)
-        end
+    for key in pairs(MoxieTrackerDB.hidden) do
+        hiddenCount = hiddenCount + 1
+        ns.Print("  [hidden] %s", key)
     end
     ns.Print("%d hidden row(s)", hiddenCount)
 
-    local size = C_CurrencyInfo.GetCurrencyListSize and C_CurrencyInfo.GetCurrencyListSize() or 0
+    local size = C_CurrencyInfo.GetCurrencyListSize()
     ns.Print("currency list size = %d", size)
     for index = 1, size do
         local info = C_CurrencyInfo.GetCurrencyListInfo(index)
@@ -107,9 +97,7 @@ local function PrintDebugDump()
     end
 end
 
--- Bare toggles and reports the new state; explicit on/off sets it; "dump" runs
--- the one-shot diagnostic printout above; anything else is rejected instead
--- of silently doing nothing (S8/S12).
+-- Bare toggles; on/off sets; "dump" prints diagnostics; anything else is rejected (S8/S12).
 local function HandleDebug(arg1)
     if arg1 == "dump" then
         PrintDebugDump()
@@ -128,11 +116,7 @@ local function HandleDebug(arg1)
     ns.Print("debug logging is %s.", MoxieTrackerDB.debugLogging and "on" or "off")
 end
 
--- "reset" alone used to mean "move the panel back to the crafting window's
--- top-right", which the cross-addon standard reserves for restoring settings.
--- Split into "reset position" (the old meaning) and "reset settings" (hidden
--- rows, pin state, threshold overrides and debug logging -- not position,
--- which keeps its own explicit subcommand).
+-- "reset settings" restores options to defaults; window positions have "reset position".
 local function HandleReset(arg1)
     if arg1 == "position" then
         ns.ResetPosition()
@@ -150,32 +134,23 @@ local function HandleReset(arg1)
         MoxieTrackerDB.hideConcentrationUnderThreshold = nil
         MoxieTrackerDB.characterOrder = nil
         MoxieTrackerDB.debugLogging = nil
+        ns.InitSavedVariables()
         ns.frame.pinned = false
-        -- Three separate pages now (#41); only refresh whichever is
-        -- actually open, same as the old single-page check did.
-        if ns.generalPanel:IsShown() then
-            ns.RefreshGeneralOptions()
-        end
-        if ns.moxieProfessionsPanel:IsShown() then
-            ns.RefreshMoxieProfessionsOptions()
-        end
-        if ns.thresholdsPanel:IsShown() then
-            ns.RefreshThresholdsOptions()
-        end
-        if ns.charactersPanel:IsShown() then
-            ns.RefreshCharactersOptions()
-        end
-        if ns.characterProfessionsPanel:IsShown() then
-            ns.RefreshCharacterProfessionsOptions()
-        end
-        if ns.concentrationPanel:IsShown() then
-            ns.RefreshConcentrationOptions()
-        end
-        if ns.concentrationProfessionsPanel:IsShown() then
-            ns.RefreshConcentrationProfessionsOptions()
-        end
-        if ns.characterOrderPanel:IsShown() then
-            ns.RefreshCharacterOrderOptions()
+        -- Refresh whichever options page is open.
+        local pages = {
+            { ns.generalPanel, ns.RefreshGeneralOptions },
+            { ns.moxieProfessionsPanel, ns.RefreshMoxieProfessionsOptions },
+            { ns.thresholdsPanel, ns.RefreshThresholdsOptions },
+            { ns.charactersPanel, ns.RefreshCharactersOptions },
+            { ns.characterProfessionsPanel, ns.RefreshCharacterProfessionsOptions },
+            { ns.concentrationPanel, ns.RefreshConcentrationOptions },
+            { ns.concentrationProfessionsPanel, ns.RefreshConcentrationProfessionsOptions },
+            { ns.characterOrderPanel, ns.RefreshCharacterOrderOptions },
+        }
+        for _, page in ipairs(pages) do
+            if page[1]:IsShown() then
+                page[2]()
+            end
         end
         ns.RefreshVisibility()
         ns.Print("settings restored to defaults.")
@@ -187,38 +162,25 @@ end
 local function PrintStatus()
     ns.Print("pinned: %s", tostring(ns.frame.pinned == true))
 
-    local hiddenCount = 0
-    if MoxieTrackerDB.hidden then
-        for _ in pairs(MoxieTrackerDB.hidden) do
-            hiddenCount = hiddenCount + 1
-        end
-    end
-    ns.Print("hidden rows: %d", hiddenCount)
-
-    -- mutedCharacters/mutedConcentrationCharacters are flat {char = true}
-    -- tables; mutedProfessions/mutedConcentrationProfessions are nested one
-    -- level deeper ({char = {profession = true}}), so they need separate
-    -- counting shapes rather than one CountMuted for both.
     local function CountFlat(field)
         local count = 0
-        if MoxieTrackerDB[field] then
-            for _ in pairs(MoxieTrackerDB[field]) do
+        for _ in pairs(MoxieTrackerDB[field]) do
+            count = count + 1
+        end
+        return count
+    end
+    -- {char = {profession = true}}
+    local function CountNested(field)
+        local count = 0
+        for _, entries in pairs(MoxieTrackerDB[field]) do
+            for _ in pairs(entries) do
                 count = count + 1
             end
         end
         return count
     end
-    local function CountNested(field)
-        local count = 0
-        if MoxieTrackerDB[field] then
-            for _, entries in pairs(MoxieTrackerDB[field]) do
-                for _ in pairs(entries) do
-                    count = count + 1
-                end
-            end
-        end
-        return count
-    end
+    ns.Print("hidden rows: %d", CountFlat("hidden"))
+
     ns.Print("Knowledge mutes: %d character(s), %d profession(s)",
         CountFlat("mutedCharacters"), CountNested("mutedProfessions"))
     ns.Print("Concentration mutes: %d character(s), %d profession(s)",
@@ -230,7 +192,7 @@ local function PrintStatus()
     ns.Print("Concentration values under threshold: %s",
         MoxieTrackerDB.hideConcentrationUnderThreshold and "hidden" or "shown")
 
-    if MoxieTrackerDB.thresholds then
+    if next(MoxieTrackerDB.thresholds) then
         local parts = {}
         for key, value in pairs(MoxieTrackerDB.thresholds) do
             parts[#parts + 1] = key .. "=" .. tostring(value)
@@ -251,11 +213,8 @@ local function PrintStatus()
     ns.Print("debug logging: %s", MoxieTrackerDB.debugLogging and "on" or "off")
 end
 
--- Table of { name, help, handler }, so the help list is derived from the same
--- data Dispatch matches against instead of a second hand-maintained block
--- that could drift out of sync (S13). "", "config" and "gui" are silent
--- aliases of "options" (S5): each opens the panel but carries no help text of
--- its own, so help doesn't repeat the same line four times.
+-- Help text is derived from this table (S13). "", "config" and "gui" are silent
+-- aliases of "options" (S5).
 local COMMANDS = {
     {name = "", help = {}, handler = OpenOptions},
     {
@@ -326,9 +285,7 @@ COMMANDS[#COMMANDS + 1] = {name = "help", help = {"/moxie help - show this list"
 
 SlashCmdList["MOXIETRACKER"] = function(msg)
     local tokens = {}
-    -- Every token is lowercased for matching: unlike an addon with free-text
-    -- arguments (a player name, a search term), nothing /moxie takes is
-    -- case-sensitive, so there is no "whole input" to accidentally corrupt.
+    -- No /moxie argument is case-sensitive, so every token is lowercased.
     for word in (msg or ""):gmatch("%S+") do
         tokens[#tokens + 1] = word:lower()
     end
@@ -342,7 +299,7 @@ SlashCmdList["MOXIETRACKER"] = function(msg)
         end
     end
 
-    -- A typo must be visibly a typo, never a silent fallback (S4).
+    -- S4: an unknown command is reported, not silently ignored.
     ns.Print("Unknown command: %s", cmd)
     PrintUsage()
 end

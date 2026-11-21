@@ -121,6 +121,29 @@ function M.install()
     _G.GameTooltip = StubObject()
     _G.UIParent = StubObject()
 
+    -- Records the category the options panel was opened to.
+    local openedCategory
+    _G.Settings = {
+        RegisterCanvasLayoutCategory = function()
+            return StubObject()
+        end,
+        RegisterCanvasLayoutSubcategory = function()
+            return StubObject()
+        end,
+        RegisterAddOnCategory = function() end,
+        OpenToCategory = function(id)
+            openedCategory = id
+        end,
+    }
+    _G.EventUtil = {
+        ContinueOnAddOnLoaded = function() end,
+    }
+    _G.C_Timer = {
+        NewTicker = function()
+            return StubObject()
+        end,
+    }
+
     -- Real WoW provides Enum.Profession as a client-defined global (the
     -- actual numeric values are Blizzard's, not MoxieTracker's, and are
     -- irrelevant here -- ns.CONCENTRATION_PROFESSIONS only needs each key
@@ -192,6 +215,12 @@ function M.install()
 
     local fixtures
     fixtures = {
+        openedCategory = function()
+            return openedCategory
+        end,
+        clearOpenedCategory = function()
+            openedCategory = nil
+        end,
         setCurrency = function(id, name, quantity, maxQuantity, rechargingCycleDurationMS)
             currencies[id] = {
                 name = name,

@@ -5,6 +5,19 @@ All notable changes to MoxieTracker are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Feature summary
+
+Formerly the TOC's `## X-ReleaseNotes` line (#56).
+
+Shows the current character's Artisan Moxie, Shard of Dundun, Unalloyed Abundance and Fused Vitality, plus whether the Abundant Offerings weekly quest is done, in a compact panel docked to the top-right of the crafting window, appearing automatically when that window opens and hiding again when it closes. Moxie is tracked for all eleven professions, and rows appear only for the professions the character actually has; Shard of Dundun, Unalloyed Abundance and Fused Vitality always show even at zero. Currencies are matched by ID rather than by name, so the addon works on any client locale, and Fused Vitality is counted across bags, bank and reagent bank. Each count is coloured against its own thresholds - Shard of Dundun green at 6 and red at 7-8, Unalloyed Abundance green at 800 or more, Moxie green at 600 or more, Fused Vitality green at 20 or more, yellow otherwise - and the Abundant Offerings row, just beneath Shard of Dundun, reads a green Done once this character has turned it in for the week or a yellow Not done until then. Hovering a line shows the same tooltip as the default currency UI. Any row can be hidden from the options panel. A second window lists unspent profession Knowledge for every character that has logged in, name in white and a per-profession breakdown in green indented beneath it, building up automatically as you play each character; a character with nothing unspent is left off the list. A third window tracks Crafter's Concentration the same way, with a projected time until each profession reaches its cap that keeps counting even for an offline character. All three windows are independently movable and remember their own positions from the options panel; each of the two roster windows can mute individual characters or just one of their professions, and either window can be turned off entirely. The order characters are listed in, shared by both rosters, defaults to alphabetical and can be customized with Up/Down buttons on its own options page; a character not yet placed in a custom order is appended alphabetically after the ones that are. Configure under Options > AddOns > MoxieTracker or with /moxie (alias /moxietracker); /moxie help lists every command. Source, issues and release notes: https://github.com/Tharavol/MoxieTracker
+
+## [Unreleased]
+
+### Changed
+- `MoxieTrackerDB`'s sub-tables are now created once at `ADDON_LOADED` (and again after `/moxie reset settings`) instead of on demand at each use (#54). Per-character mute tables are still created when first needed.
+- Events are registered directly instead of through a `pcall` wrapper, and checks for APIs that always exist on the retail client (`C_Item.RequestLoadItemDataByID`, `C_QuestLog.RequestLoadQuestByID`, `C_TradeSkillUI`, `GetProfessions`, `C_CurrencyInfo.GetCurrencyListSize`, `EventUtil.ContinueOnAddOnLoaded`, `Settings`, `C_Timer`) are gone, along with their fallbacks (#55).
+- Source comments trimmed, the options pages' repeated checkbox/list/scroll code factored into shared helpers with an unchanged layout, and the TOC's `## X-ReleaseNotes` line moved into this file (#56).
+
 ## [1.11.0] - 2026-10-29
 
 ### Added
