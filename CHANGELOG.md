@@ -17,6 +17,7 @@ Shows the current character's Artisan Moxie, Shard of Dundun, Unalloyed Abundanc
 - `MoxieTrackerDB`'s sub-tables are now created once at `ADDON_LOADED` (and again after `/moxie reset settings`) instead of on demand at each use (#54). Per-character mute tables are still created when first needed.
 - Events are registered directly instead of through a `pcall` wrapper, and checks for APIs that always exist on the retail client (`C_Item.RequestLoadItemDataByID`, `C_QuestLog.RequestLoadQuestByID`, `C_TradeSkillUI`, `GetProfessions`, `C_CurrencyInfo.GetCurrencyListSize`, `EventUtil.ContinueOnAddOnLoaded`, `Settings`, `C_Timer`) are gone, along with their fallbacks (#55).
 - Source comments trimmed, the options pages' repeated checkbox/list/scroll code factored into shared helpers with an unchanged layout, and the TOC's `## X-ReleaseNotes` line moved into this file (#56).
+- Retail only: the TOC declares `AllowLoadGameType: standard`, so World of Warcraft: Forever lists the addon as unavailable for that game type instead of out of date (#58). Forever has no Moxie currencies.
 
 ## [1.11.0] - 2026-10-29
 
