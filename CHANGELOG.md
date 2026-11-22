@@ -175,7 +175,7 @@ Adopts the cross-addon slash command standard (#37).
   convention MoxieTracker_Options.lua already uses for its own layout. No
   behavior change.
 
-## [1.5.0] - 2026-08-06
+## [1.5.0] - 2026-08-05
 
 ### Added
 
